@@ -329,6 +329,12 @@ samconfig.toml
 # VIDHI SPECIFIC
 # ============================================================================
 
+# Exclude other projects (keep only VIDHI)
+Udhavi_bot/
+ishaan_github/
+UdhaviBot/
+AI42J/
+
 # Backend specific
 vidhi-backend/chroma_db/
 vidhi-backend/audio_cache/
