@@ -11,6 +11,12 @@ import os
 import time
 from typing import Optional
 
+# --- ADD THESE THREE LINES HERE ---
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+os.environ["USER_AGENT"] = "Vidhi-Backend-App/1.0"
+# ----------------------------------
+
 # Import configurations
 from configs import config
 
@@ -170,17 +176,17 @@ async def startup_event():
             retriever = create_retriever(vectorstore)
             logger.info("Retriever created successfully")
             
-            # Initialize LLM service (only if Bedrock is available)
-            if BEDROCK_AVAILABLE:
-                logger.info("Initializing Bedrock LLM service...")
-                llm_service = BedrockLLMService(logger, retriever)
-                
-                if llm_service.error:
-                    logger.error(f"LLM service initialization error: {llm_service.error}")
-                else:
-                    logger.info("LLM service initialized successfully")
+        # Initialize LLM service (only if Bedrock is available)
+        if BEDROCK_AVAILABLE:
+            logger.info("Initializing Bedrock LLM service...")
+            llm_service = BedrockLLMService(logger, retriever)
+            
+            if llm_service.error:
+                logger.error(f"LLM service initialization error: {llm_service.error}")
             else:
-                logger.warning("Skipping LLM service - Bedrock not available")
+                logger.info("LLM service initialized successfully")
+        else:
+            logger.warning("Skipping LLM service - Bedrock not available")
         
         # Initialize emergency LLM (only if Bedrock is available)
         if BEDROCK_AVAILABLE:

@@ -4,7 +4,7 @@ For Python 3.13 compatibility
 """
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 import logging
 import os
 import time
@@ -110,9 +110,12 @@ async def startup_event():
             # Initialize LLM services
             logger.info("Initializing Bedrock services...")
             emergency_llm = EmergencyLLMService(logger)
-            logger.info("Emergency LLM initialized")
+            if emergency_llm.error:
+                logger.error(f"Error from within EmergencyLLMService: {emergency_llm.error}")
+            else:
+                logger.info("Emergency LLM initialized")
         except Exception as e:
-            logger.error(f"Error initializing Bedrock services: {e}")
+            logger.error(f"Error initializing Bedrock services: {e}", exc_info=True)
     
     if TRANSCRIBE_AVAILABLE and CONFIG_AVAILABLE:
         try:
@@ -148,6 +151,12 @@ async def root():
             "chroma_available": CHROMA_AVAILABLE
         }
     }
+
+
+@app.get("/favicon.ico")
+async def favicon():
+    """Return 204 for favicon requests to avoid 404 errors"""
+    return Response(status_code=204)
 
 
 @app.get("/health")

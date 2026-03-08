@@ -3,7 +3,7 @@ ChromaDB Vector Store for VIDHI
 Adapted from UdhaviBot to use AWS Bedrock embeddings
 """
 from langchain_community.vectorstores import Chroma
-from langchain.schema import Document
+from langchain_core.documents import Document
 from typing import Optional, List
 import logging
 

@@ -15,7 +15,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 class MySchemeScraper:
     def __init__(self):
         self.myscheme_url = 'https://rules.myscheme.in/'
-        self.driver = webdriver.Firefox()
+        options = webdriver.FirefoxOptions()
+        options.page_load_strategy = 'eager' # Don't wait for all images/assets context to load
+        self.driver = webdriver.Firefox(options=options)
+        self.driver.set_page_load_timeout(45) # 45 sec timeout instead of 300 sec
 
     def get_scheme_links(self):
         self.driver.get(self.myscheme_url)
@@ -23,18 +26,34 @@ class MySchemeScraper:
 
         try:
             WebDriverWait(self.driver, 20).until(EC.visibility_of_element_located((By.ID, "__next")))
-            result_elements = self.driver.find_element(By.ID, '__next').find_element(By.TAG_NAME,
-                                                                                     'tbody').find_elements(By.TAG_NAME,
-                                                                                                            'tr')
+            import time
+            time.sleep(3) # Wait for page dynamic content to fully load
 
-            for result_element in result_elements:
-                table_rows = result_element.find_elements(By.TAG_NAME, 'td')
-                result_details_dict = {
-                    'sr_no': table_rows[0].text,
-                    'scheme_name': table_rows[1].text.replace('\nCheck Eligibility', ''),
-                    'scheme_link': table_rows[2].find_element(By.TAG_NAME, 'a').get_attribute('href')
-                }
-                scheme_links.append(result_details_dict)
+            tbody = self.driver.find_element(By.ID, '__next').find_element(By.TAG_NAME, 'tbody')
+            num_rows = len(tbody.find_elements(By.TAG_NAME, 'tr'))
+
+            for i in range(num_rows):
+                retries = 3
+                while retries > 0:
+                    try:
+                        # Re-fetch row on each iteration to avoid stale elements
+                        tbody = self.driver.find_element(By.ID, '__next').find_element(By.TAG_NAME, 'tbody')
+                        row = tbody.find_elements(By.TAG_NAME, 'tr')[i]
+                        table_rows = row.find_elements(By.TAG_NAME, 'td')
+                        
+                        if len(table_rows) >= 3:
+                            result_details_dict = {
+                                'sr_no': table_rows[0].text,
+                                'scheme_name': table_rows[1].text.replace('\nCheck Eligibility', ''),
+                                'scheme_link': table_rows[2].find_element(By.TAG_NAME, 'a').get_attribute('href')
+                            }
+                            scheme_links.append(result_details_dict)
+                        break
+                    except Exception as e:
+                        retries -= 1
+                        time.sleep(1)
+                        if retries == 0:
+                            logging.error(f"Failed to fetch row {i} due to: {e}")
 
         except TimeoutException:
             logging.error("Timeout while waiting for page to load")
@@ -45,8 +64,8 @@ class MySchemeScraper:
 
     def get_scheme_details(self, scheme_links):
         for scheme in scheme_links:
-            self.driver.get(scheme['scheme_link'])
             try:
+                self.driver.get(scheme['scheme_link'])
                 WebDriverWait(self.driver, 20).until(EC.visibility_of_element_located((By.ID, "__next")))
 
                 # Extract tags with exception handling

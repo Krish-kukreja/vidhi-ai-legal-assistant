@@ -2,6 +2,9 @@
 AWS Bedrock LLM Setup for VIDHI
 Replaces Google Gemini with AWS Bedrock (Claude)
 """
+from langchain_aws import ChatBedrock
+# OR if you are using the older style:
+from langchain_community.llms import Bedrock
 from typing import Optional
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
@@ -123,16 +126,28 @@ Provide a clear, accurate, and actionable response:"""
 
             prompt = ChatPromptTemplate.from_template(qa_system_prompt)
 
-            # Initialize conversational RAG chain
-            self._conversational_rag_chain = (
-                {
-                    "context": self._retriever | format_documents,
-                    "question": RunnablePassthrough()
-                }
-                | prompt
-                | self.llm
-                | StrOutputParser()
-            )
+            if self._retriever:
+                # Initialize conversational RAG chain
+                self._conversational_rag_chain = (
+                    {
+                        "context": self._retriever | format_documents,
+                        "question": RunnablePassthrough()
+                    }
+                    | prompt
+                    | self.llm
+                    | StrOutputParser()
+                )
+            else:
+                # Initialize standard chain without RAG
+                self._conversational_rag_chain = (
+                    {
+                        "context": lambda x: "No external knowledge base available.",
+                        "question": RunnablePassthrough()
+                    }
+                    | prompt
+                    | self.llm
+                    | StrOutputParser()
+                )
 
             return None
         except Exception as e:

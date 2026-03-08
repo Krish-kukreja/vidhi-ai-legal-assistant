@@ -3,11 +3,10 @@ Document processing utilities for VIDHI
 Adapted from UdhaviBot with AWS compatibility
 """
 from langchain_community.document_loaders import WebBaseLoader, JSONLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from typing import Iterable, List
 import json
-from langchain.schema import Document
-
+from langchain_core.documents import Document
 
 def load_documents(website: str) -> list[Document]:
     """
