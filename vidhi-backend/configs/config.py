@@ -105,7 +105,7 @@ def get_embeddings():
     Lazy import to avoid issues when boto3 is not configured.
     """
     try:
-        from langchain_community.embeddings import BedrockEmbeddings
+        from langchain_aws import BedrockEmbeddings
         
         return BedrockEmbeddings(
             model_id=BEDROCK_EMBEDDINGS_MODEL,

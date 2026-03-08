@@ -193,22 +193,44 @@ async def health_check():
 async def chat(
     text: Optional[str] = Form(None),
     language: str = Form("english"),
-    language_code: str = Form("en-IN")
+    language_code: str = Form("en-IN"),
+    file: Optional[UploadFile] = File(None)
 ):
     """
     Simple chat endpoint for VIDHI.
     Returns basic response until full services are configured.
     """
     try:
+        # If file is present, extract its text content
+        if file:
+            try:
+                content = await file.read()
+                file_text = content.decode('utf-8')
+                
+                # Truncate if document is too massive
+                if len(file_text) > 20000:
+                    file_text = file_text[:20000] + "\n\n[...Document truncated due to length...]"
+                    
+                if text:
+                    text = f"[Attached Document: {file.filename}]\n\n{file_text}\n\nUser Question: {text}"
+                else:
+                    text = f"[Attached Document: {file.filename}]\n\n{file_text}\n\nPlease analyze this document."
+            except Exception as e:
+                logger.error(f"Failed to read file {file.filename}: {e}")
+                if text:
+                    text = f"[Failed to extract text from document {file.filename}. Note: user appended a file but it couldn't be read.]\n\nUser Question: {text}"
+                else:
+                    raise HTTPException(status_code=400, detail="Could not read attached file and no text was provided.")
+                    
         if not text:
-            raise HTTPException(status_code=400, detail="Text is required")
+            raise HTTPException(status_code=400, detail="Text or file is required")
         
         logger.info(f"Chat request: {text[:50]}... in {language}")
         
         # If primary LLM is available, use it
         if llm_service:
             try:
-                response = llm_service.get_response(text, language)
+                response = llm_service.query(text, language)
                 return {
                     "response": response,
                     "language": language,
