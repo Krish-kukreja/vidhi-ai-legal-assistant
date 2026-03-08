@@ -80,7 +80,7 @@ export async function sendAudioQuery(
   use_aws_stt: boolean = false
 ): Promise<QueryResponse> {
   const formData = new FormData();
-  formData.append('file', audioBlob, 'audio.wav');
+  formData.append('files', audioBlob, 'audio.wav');
   formData.append('language', language);
   formData.append('language_code', language_code);
   formData.append('use_aws_stt', use_aws_stt.toString());

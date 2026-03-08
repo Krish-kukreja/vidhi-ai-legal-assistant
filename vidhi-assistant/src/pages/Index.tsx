@@ -79,12 +79,19 @@ const Index = () => {
     if (isTyping) return; // Don't allow new messages while processing
     const langKey = language || "hindi";
 
+    // Create a local object URL so the user can play back their own voice message to verify their mic works
+    let userAudioUrl = undefined;
+    if (files && files.length === 1 && files[0].type.startsWith('audio/')) {
+      userAudioUrl = URL.createObjectURL(files[0]);
+    }
+
     const userMsg: Message = {
       id: Date.now().toString(),
       text: files && files.length > 0 && !text ? (files.length === 1 && files[0].type.startsWith('audio/') ? "🎵 Voice message" : `📄 ${files.length} Document(s) attached`) : text || "📄 Document attached",
       sender: "user",
       language: langKey,
       timestamp: new Date(),
+      audioUrl: userAudioUrl
     };
 
     setMessages((prev) => [...prev, userMsg]);

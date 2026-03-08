@@ -50,6 +50,7 @@ const ChatInput = ({ onSend, isLoading = false, onStop }: ChatInputProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const languageMenuRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recognitionRef = useRef<any>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const isCancelledRef = useRef<boolean>(false);
 
@@ -57,6 +58,9 @@ const ChatInput = ({ onSend, isLoading = false, onStop }: ChatInputProps) => {
     return () => {
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
         mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      }
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
       }
     };
   }, []);
@@ -108,7 +112,7 @@ const ChatInput = ({ onSend, isLoading = false, onStop }: ChatInputProps) => {
     e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
   };
 
-  const startRecording = async () => {
+  const startMediaRecorder = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
@@ -142,7 +146,25 @@ const ChatInput = ({ onSend, isLoading = false, onStop }: ChatInputProps) => {
               : 'webm';
           const audioBlob = new Blob(audioChunksRef.current, { type: actualMime });
           const audioFile = new File([audioBlob], `voice_message.${ext}`, { type: actualMime });
-          onSend("", selectedLanguage, [audioFile]);
+
+          // Wait briefly for any final SpeechRecognition results to settle in the React state
+          setTimeout(() => {
+            const currentText = inputRef.current?.value || "";
+            // If we have transcribed text from the browser STT, we don't need to send the audio file 
+            // to be re-transcribed (prevents 10s AWS Transcribe delay).
+            // If text is empty (Web Speech API failed/unsupported), we MUST send the audio file to fallback to AWS.
+            if (currentText.trim()) {
+              onSend(currentText, selectedLanguage, []);
+            } else {
+              console.log("Sending fallback audio file to backend:", audioFile);
+              toast({
+                title: "Voice sent",
+                description: "Audio captured. Processing with AWS Transcribe...",
+              });
+              onSend("", selectedLanguage, [audioFile]);
+            }
+            setText("");
+          }, 150);
         }
         audioChunksRef.current = [];
         setIsRecording(false);
@@ -153,18 +175,81 @@ const ChatInput = ({ onSend, isLoading = false, onStop }: ChatInputProps) => {
       mediaRecorder.start(1000); // collect chunks every second
 
     } catch (err) {
+      console.error("Microphone access error:", err);
+      // Give the user explicit instructions on how to fix the permission issue
       toast({
-        title: "Microphone access denied",
-        description: "Please allow microphone access in your browser settings to use voice input.",
+        title: "Microphone Access Denied",
+        description: "Please click the lock icon 🔒 in your browser's address bar, find 'Microphone', and change it to 'Allow'. Then refresh the page.",
         variant: "destructive",
+        duration: 8000,
       });
     }
   };
 
 
+  const startRecording = () => {
+    // ALWAYS start MediaRecorder as a fallback (and to control recording state)
+    startMediaRecorder();
+
+    // Try to use browser's built-in speech recognition for instant results
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.lang = currentLanguage.bcp47 || 'hi-IN';
+      recognition.continuous = true;
+      recognition.interimResults = true;
+
+      recognitionRef.current = recognition;
+      isCancelledRef.current = false;
+      let currentFinal = "";
+      // Save existing text before recording starts
+      const initialText = text;
+
+      recognition.onstart = () => {
+        setTranscript("");
+      };
+
+      recognition.onresult = (event: any) => {
+        let interim = "";
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            currentFinal += event.results[i][0].transcript + " ";
+          } else {
+            interim += event.results[i][0].transcript;
+          }
+        }
+        const fullTranscript = (currentFinal + interim).trim();
+        setTranscript(fullTranscript);
+        // Append transcribed text to the initial text with a space
+        const newText = initialText ? `${initialText} ${fullTranscript}` : fullTranscript;
+        setText(newText); // Live update the textarea
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error('Speech recognition error', event.error);
+      };
+
+      recognition.onend = () => {
+        // Sending is handled by mediaRecorder.onstop
+      };
+
+      try {
+        recognition.start();
+      } catch (e) {
+        console.error('Browser STT failed to start', e);
+      }
+    }
+  };
+
+
   const stopRecording = () => {
+    isCancelledRef.current = false;
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
+    }
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
     }
   };
 
@@ -173,6 +258,10 @@ const ChatInput = ({ onSend, isLoading = false, onStop }: ChatInputProps) => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
     }
+    if (recognitionRef.current) {
+      recognitionRef.current.abort();
+    }
+    setText(""); // Clear text if cancelled
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -266,8 +355,8 @@ const ChatInput = ({ onSend, isLoading = false, onStop }: ChatInputProps) => {
             <div className="flex items-center justify-center gap-4">
               <div className="w-3 h-3 rounded-full bg-sos animate-pulse" />
               <AudioWave />
-              <span className="text-sm font-medium text-foreground">
-                Listening in {currentLanguage.name}...
+              <span className="text-sm font-medium text-foreground truncate max-w-[200px]">
+                {transcript || `Listening in ${currentLanguage.name}...`}
               </span>
               <button
                 onClick={cancelRecording}
@@ -284,20 +373,6 @@ const ChatInput = ({ onSend, isLoading = false, onStop }: ChatInputProps) => {
                 <Check className="h-4 w-4" />
                 Done Recording
               </button>
-            </div>
-          </motion.div>
-        )}
-
-        {recordingComplete && !isRecording && (
-          <motion.div
-            className="py-2 mb-2 px-3 rounded-lg bg-green-500/10 border border-green-500/20"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-          >
-            <div className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400">
-              <Check className="h-4 w-4" />
-              <span>Recording complete! Review and edit your message below, then click send.</span>
             </div>
           </motion.div>
         )}

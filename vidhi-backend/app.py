@@ -11,11 +11,14 @@ import os
 import time
 from typing import Optional, List
 
-# --- ADD THESE THREE LINES HERE ---
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 os.environ["USER_AGENT"] = "Vidhi-Backend-App/1.0"
-# ----------------------------------
+
+# Set up logging early so service imports can use logger in their except blocks
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Import configurations
 from configs import config
@@ -69,12 +72,35 @@ except ImportError as e:
     logger.warning(f"ChromaDB not available: {e}")
     CHROMA_AVAILABLE = False
 
+try:
+    from services.document_education import document_education_service
+    DOCUMENT_EDUCATION_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Document education service not available: {e}")
+    DOCUMENT_EDUCATION_AVAILABLE = False
+    document_education_service = None
+
+try:
+    from services.chat_history import chat_history_service
+    CHAT_HISTORY_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Chat history service not available: {e}")
+    CHAT_HISTORY_AVAILABLE = False
+    chat_history_service = None
+
 # Initialize FastAPI app
 app = FastAPI(
     title="VIDHI API",
     description="Voice-Integrated Defense for Holistic Inclusion - AI Legal Assistant",
     version="1.0.0"
 )
+
+# For AWS Lambda deployment
+try:
+    from mangum import Mangum
+    handler = Mangum(app)
+except ImportError:
+    handler = None
 
 # Enable CORS
 app.add_middleware(
@@ -85,12 +111,41 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-# Set up logging
-logging.basicConfig(
-    level=getattr(logging, config.LOG_LEVEL),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Update log level from config (overrides the early INFO default)
+logging.getLogger().setLevel(getattr(logging, config.LOG_LEVEL))
+
+# Additional Pydantic models
+class DocumentEducationRequest(BaseModel):
+    document_text: str
+    document_type: str  # rental_agreement, loan_contract, employment_contract, etc.
+    language: str = "english"
+
+class ClauseExplanationRequest(BaseModel):
+    clause_text: str
+    document_context: str
+    language: str = "english"
+    user_profile: Optional[dict] = None
+
+class TermDefinitionRequest(BaseModel):
+    term: str
+    language: str = "english"
+    context: Optional[str] = None
+
+class InteractiveQARequest(BaseModel):
+    question: str
+    document_text: str
+    conversation_history: list = []
+    language: str = "english"
+
+class TeachingSessionRequest(BaseModel):
+    document_text: str
+    document_type: str
+    language: str = "english"
+
+class MessagePlaybackRequest(BaseModel):
+    chat_id: str
+    message_id: str
+    regenerate: bool = False
 
 # Initialize services
 embeddings = None
@@ -228,7 +283,7 @@ async def startup_event():
         logger.info("VIDHI backend started successfully!")
         logger.info("Note: Some features may be limited due to missing optional dependencies")
         logger.info("To enable all features, install: pip install -r requirements.txt")
-        
+
     except Exception as e:
         logger.error(f"Error during startup: {e}", exc_info=True)
 
@@ -287,7 +342,7 @@ async def chat(
                 logger.info(f"Processing uploaded file: {file.filename}")
                 
                 # Check if file has an actual filename (some frameworks send empty files for empty arrays)
-                if not file.filename:
+                if not getattr(file, "filename", None):
                     continue
                     
                 # Read file data
@@ -295,7 +350,7 @@ async def chat(
                 mime_type = file.content_type
                 
                 # Check if it's an audio file
-                is_audio = (mime_type and mime_type.startswith('audio/')) or file.filename.lower().endswith(('.wav', '.mp3', '.m4a', '.ogg', '.webm'))
+                is_audio = (mime_type and mime_type.startswith('audio/')) or (file.filename and file.filename.lower().endswith(('.wav', '.mp3', '.m4a', '.ogg', '.webm')))
 
                 
                 if is_audio and not audio_processed:
@@ -338,7 +393,7 @@ async def chat(
                         result = transcribe_service.transcribe_audio(
                             s3_uri,
                             language_code,
-                            identify_language=True,
+                            identify_language=False,
                             media_format=media_format
                         )
 
@@ -347,7 +402,7 @@ async def chat(
                             # Using audio transcript as the main text
                             user_input = result['transcript']
                             language_code = result['language_code']
-                            logger.info(f"Transcribed: {user_input[:50]}...")
+                            logger.info(f"Transcribed: {user_input[:50] if user_input else 'empty'}...")
                         else:
                             raise HTTPException(status_code=500, detail=result['error'])
                     else:
@@ -400,16 +455,25 @@ async def chat(
                 user_input = f"{base_text}\n\n[Attached Documents Content Start]\n{combined_docs}\n[Attached Documents Content End]"
                     
         # Handle text input without file
-        elif text:
+        elif text is not None and str(text).strip():
             user_input = text
 
+        elif use_aws_stt:
+            user_input = "I received a voice message but it was empty or could not be processed. Please try again."
+            
         else:
             raise HTTPException(status_code=400, detail="Either text or audio file is required")
         
         # Safety guard — ensure user_input is never None at this point
-        if not user_input:
-            if text:
+        if not user_input or not str(user_input).strip():
+            if text is not None and str(text).strip():
                 user_input = text
+            elif files and len(files) > 0 and is_audio:
+                user_input = "The voice recording I received was completely silent or unclear. Please politely tell the user that you couldn't hear them and ask them to check their microphone and try speaking again."
+            elif files and len(files) > 0:
+                user_input = "Could not recognize any valid text in the provided documents."
+            elif use_aws_stt:
+                user_input = "The voice recording I received was completely silent or unclear. Please politely tell the user that you couldn't hear them and ask them to check their microphone and try speaking again."
             else:
                 raise HTTPException(status_code=400, detail="Either text or audio file is required")
 
@@ -418,51 +482,16 @@ async def chat(
             raise HTTPException(status_code=503, detail="LLM service not available")
         
         logger.info(f"Querying LLM: {user_input[:50]}...")
-
+        llm_start_time = time.time()
+        
         ai_response = llm_service.query(user_input, language)
         
+        logger.info(f"LLM completed in {time.time() - llm_start_time:.2f} seconds")
+
         # Generate voice output
+        # Skip synchronous voice generation for faster chat response
+        # The frontend will fetch the audio via the playback endpoint or browser TTS
         audio_url = None
-        if polly_service and config.ENABLE_VOICE_INPUT:
-            logger.info("Generating voice output...")
-            
-            # Check if language is supported by AWS Polly
-            if language_code in ['hi-IN', 'bn-IN', 'en-IN']:
-                tts_result = polly_service.get_or_create_audio(
-                    ai_response,
-                    language_code
-                )
-                
-                if tts_result['success']:
-                    audio_url = tts_result['audio_url']
-                    logger.info(f"Audio URL: {audio_url}")
-            
-            # Use Bhashini for dialects
-            elif bhashini_service and bhashini_service.is_supported(language_code[:2]):
-                logger.info(f"Using Bhashini for {language_code}")
-                tts_result = bhashini_service.text_to_speech(
-                    ai_response,
-                    language_code[:2]
-                )
-                
-                if tts_result['success']:
-                    # Upload Bhashini audio to S3
-                    import base64
-                    audio_bytes = base64.b64decode(tts_result['audio_base64'])
-                    
-                    timestamp = int(time.time())
-                    s3_key = f"tts/{timestamp}-{language_code}.mp3"
-                    
-                    import boto3
-                    s3_client = boto3.client('s3', region_name=config.AWS_REGION)
-                    s3_client.put_object(
-                        Bucket=config.S3_BUCKET_AUDIO,
-                        Key=s3_key,
-                        Body=audio_bytes,
-                        ContentType='audio/mpeg'
-                    )
-                    
-                    audio_url = f"https://{config.S3_BUCKET_AUDIO}.s3.{config.AWS_REGION}.amazonaws.com/{s3_key}"
         
         return ChatResponse(
             response=ai_response,
@@ -529,69 +558,9 @@ async def get_supported_languages():
     }
 
 
-# For AWS Lambda deployment
-try:
-    from mangum import Mangum
-    handler = Mangum(app)
-except ImportError:
-    logger.warning("Mangum not installed. Lambda deployment not available.")
-    handler = None
-
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
-# Try to import new services - gracefully handle missing dependencies
-try:
-    from services.document_education import document_education_service
-    DOCUMENT_EDUCATION_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"Document education service not available: {e}")
-    DOCUMENT_EDUCATION_AVAILABLE = False
-    document_education_service = None
-
-try:
-    from services.chat_history import chat_history_service
-    CHAT_HISTORY_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"Chat history service not available: {e}")
-    CHAT_HISTORY_AVAILABLE = False
-    chat_history_service = None
-
-# Additional Pydantic models for new endpoints
-class DocumentEducationRequest(BaseModel):
-    document_text: str
-    document_type: str  # rental_agreement, loan_contract, employment_contract, etc.
-    language: str = "english"
-
-class ClauseExplanationRequest(BaseModel):
-    clause_text: str
-    document_context: str
-    language: str = "english"
-    user_profile: Optional[dict] = None
-
-class TermDefinitionRequest(BaseModel):
-    term: str
-    language: str = "english"
-    context: Optional[str] = None
-
-class InteractiveQARequest(BaseModel):
-    question: str
-    document_text: str
-    conversation_history: list = []
-    language: str = "english"
-
-class TeachingSessionRequest(BaseModel):
-    document_text: str
-    document_type: str
-    language: str = "english"
-
-class MessagePlaybackRequest(BaseModel):
-    chat_id: str
-    message_id: str
-    regenerate: bool = False
 
 
 # ============================================================================
