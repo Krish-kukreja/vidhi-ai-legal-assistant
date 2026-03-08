@@ -28,7 +28,8 @@ class AWSTranscribeService:
         audio_s3_uri: str,
         language_code: str = 'hi-IN',
         job_name: Optional[str] = None,
-        identify_language: bool = False
+        identify_language: bool = False,
+        media_format: str = 'wav'
     ) -> Dict:
         """
         Transcribe audio file from S3.
@@ -38,6 +39,7 @@ class AWSTranscribeService:
             language_code: Language code (hi-IN, bn-IN, etc.)
             job_name: Optional job name
             identify_language: Auto-detect language
+            media_format: Audio format (wav, webm, ogg, mp4, flac, mp3)
         
         Returns:
             Dict with transcription results
@@ -49,8 +51,10 @@ class AWSTranscribeService:
             params = {
                 'TranscriptionJobName': job_name,
                 'Media': {'MediaFileUri': audio_s3_uri},
-                'MediaFormat': 'wav',  # or 'mp3', 'mp4', 'flac'
-                'OutputBucketName': audio_s3_uri.split('/')[2]  # Extract bucket name
+                'MediaFormat': media_format,
+                # Note: NOT setting OutputBucketName here.
+                # When omitted, AWS returns a pre-signed HTTPS URL we can fetch with requests.get().
+                # When set, AWS returns an s3:// URI which requires boto3 to read.
             }
             
             if identify_language:
@@ -87,13 +91,23 @@ class AWSTranscribeService:
                 
                 detected_language = result['TranscriptionJob'].get('LanguageCode', language_code)
                 
+                try:
+                    transcript_text = transcript_data['results']['transcripts'][0]['transcript']
+                except (KeyError, IndexError, TypeError) as e:
+                    logger.error(f"Error parsing transcript data: {e}. Data received: {str(transcript_data)[:200]}")
+                    return {
+                        'success': False,
+                        'error': 'Could not parse transcription result from AWS. The audio may be too short or unclear.'
+                    }
+
                 return {
                     'success': True,
-                    'transcript': transcript_data['results']['transcripts'][0]['transcript'],
+                    'transcript': transcript_text,
                     'language_code': detected_language,
                     'confidence': self._get_average_confidence(transcript_data),
                     'job_name': job_name
                 }
+
             else:
                 failure_reason = result['TranscriptionJob'].get('FailureReason', 'Unknown')
                 logger.error(f"Transcription failed: {failure_reason}")
@@ -110,13 +124,26 @@ class AWSTranscribeService:
             }
     
     def _download_transcript(self, transcript_uri: str) -> Dict:
-        """Download transcript JSON from S3"""
+        """Download transcript JSON from S3 — handles both s3:// and https:// URIs."""
         try:
-            response = requests.get(transcript_uri)
-            return response.json()
+            if transcript_uri.startswith('s3://'):
+                # Parse s3://bucket/key
+                parts = transcript_uri[5:].split('/', 1)
+                bucket = parts[0]
+                key = parts[1] if len(parts) > 1 else ''
+                logger.info(f"Downloading transcript from S3: bucket={bucket}, key={key}")
+                response = self.s3.get_object(Bucket=bucket, Key=key)
+                import json
+                return json.loads(response['Body'].read().decode('utf-8'))
+            else:
+                # Pre-signed HTTPS URL — download directly
+                response = requests.get(transcript_uri, timeout=30)
+                response.raise_for_status()
+                return response.json()
         except Exception as e:
-            logger.error(f"Error downloading transcript: {e}")
+            logger.error(f"Error downloading transcript from {transcript_uri}: {e}")
             return {}
+
     
     def _get_average_confidence(self, transcript_data: Dict) -> float:
         """Calculate average confidence score"""

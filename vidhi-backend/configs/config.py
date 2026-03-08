@@ -94,7 +94,8 @@ ENABLE_SCHEME_MATCHING = os.getenv("ENABLE_SCHEME_MATCHING", "True").lower() == 
 ENABLE_CACHING = os.getenv("ENABLE_CACHING", "True").lower() == "true"
 
 # Cost Optimization
-USE_BROWSER_STT_FIRST = True  # Use browser Web Speech API before AWS Transcribe
+USE_BROWSER_STT_FIRST = False  # Send audio directly to AWS Transcribe
+
 PRECOMPUTE_EMBEDDINGS = True  # Pre-compute embeddings for schemes
 CACHE_COMMON_QUERIES = True  # Cache frequently asked questions
 
@@ -105,7 +106,7 @@ def get_embeddings():
     Lazy import to avoid issues when boto3 is not configured.
     """
     try:
-        from langchain_community.embeddings import BedrockEmbeddings
+        from langchain_aws import BedrockEmbeddings
         
         return BedrockEmbeddings(
             model_id=BEDROCK_EMBEDDINGS_MODEL,

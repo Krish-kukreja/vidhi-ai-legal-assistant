@@ -2,6 +2,8 @@
 AWS Bedrock LLM Setup for VIDHI
 Replaces Google Gemini with AWS Bedrock (Claude)
 """
+from langchain_aws import ChatBedrock
+
 from typing import Optional
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
@@ -30,9 +32,9 @@ def _initialize_bedrock_llm(model_id: str, region: str = "ap-south-1"):
         - An error message as a string if initialization fails, otherwise None.
     """
     try:
-        from langchain_community.chat_models import BedrockChat
+        from langchain_aws import ChatBedrock
         
-        llm = BedrockChat(
+        llm = ChatBedrock(
             model_id=model_id,
             region_name=region,
             model_kwargs={
@@ -61,7 +63,7 @@ class BedrockLLMService:
     def __init__(
         self,
         logger: logging.Logger,
-        retriever: VectorStoreRetriever,
+        retriever: Optional[VectorStoreRetriever] = None,
         model_id: str = "anthropic.claude-3-haiku-20240307-v1:0",
         region: str = "ap-south-1"
     ):
@@ -107,6 +109,7 @@ Your responsibilities:
 5. Communicate in simple, understandable language appropriate for users with varying literacy levels
 
 Guidelines:
+- ALWAYS format your responses using rich Markdown (headers, bullet points, bold text) for readability.
 - Always cite specific articles, sections, or laws when providing legal information
 - Include actionable step-by-step guidance
 - Link to authoritative sources (India.gov.in, Supreme Court judgments, etc.)
@@ -123,16 +126,28 @@ Provide a clear, accurate, and actionable response:"""
 
             prompt = ChatPromptTemplate.from_template(qa_system_prompt)
 
-            # Initialize conversational RAG chain
-            self._conversational_rag_chain = (
-                {
-                    "context": self._retriever | format_documents,
-                    "question": RunnablePassthrough()
-                }
-                | prompt
-                | self.llm
-                | StrOutputParser()
-            )
+            if self._retriever:
+                # Initialize conversational RAG chain
+                self._conversational_rag_chain = (
+                    {
+                        "context": self._retriever | format_documents,
+                        "question": RunnablePassthrough()
+                    }
+                    | prompt
+                    | self.llm
+                    | StrOutputParser()
+                )
+            else:
+                # Initialize standard chain without RAG
+                self._conversational_rag_chain = (
+                    {
+                        "context": lambda x: "No external knowledge base available.",
+                        "question": RunnablePassthrough()
+                    }
+                    | prompt
+                    | self.llm
+                    | StrOutputParser()
+                )
 
             return None
         except Exception as e:
@@ -176,7 +191,10 @@ Provide a clear, accurate, and actionable response:"""
             response = self._conversational_rag_chain.invoke(question_with_language)
             return response
         except Exception as e:
-            self._logger.error(f"Error querying RAG system: {e}")
+            import traceback
+            with open("llm_error.log", "w") as f:
+                f.write(traceback.format_exc())
+            self._logger.exception(f"Error querying RAG system: {e}")
             return f"I apologize, but I encountered an error processing your question. Please try again."
 
     def query_with_context(self, question: str, context: str, language: str = "English") -> str:
@@ -213,11 +231,13 @@ class EmergencyLLMService:
 
     def __init__(self, logger: logging.Logger, region: str = "ap-south-1"):
         self._logger = logger
+        self.error = None
         self.llm, error = _initialize_bedrock_llm(
             "anthropic.claude-3-haiku-20240307-v1:0",  # Fastest model
             region
         )
         if error:
+            self.error = error
             self._logger.error(f"Failed to initialize Emergency LLM: {error}")
 
     def get_emergency_rights(self, situation: str, language: str = "English") -> str:
