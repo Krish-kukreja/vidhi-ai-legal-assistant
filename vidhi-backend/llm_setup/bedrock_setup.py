@@ -3,8 +3,7 @@ AWS Bedrock LLM Setup for VIDHI
 Replaces Google Gemini with AWS Bedrock (Claude)
 """
 from langchain_aws import ChatBedrock
-# OR if you are using the older style:
-from langchain_community.llms import Bedrock
+
 from typing import Optional
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
@@ -33,9 +32,9 @@ def _initialize_bedrock_llm(model_id: str, region: str = "ap-south-1"):
         - An error message as a string if initialization fails, otherwise None.
     """
     try:
-        from langchain_community.chat_models import BedrockChat
+        from langchain_aws import ChatBedrock
         
-        llm = BedrockChat(
+        llm = ChatBedrock(
             model_id=model_id,
             region_name=region,
             model_kwargs={
@@ -64,7 +63,7 @@ class BedrockLLMService:
     def __init__(
         self,
         logger: logging.Logger,
-        retriever: VectorStoreRetriever,
+        retriever: Optional[VectorStoreRetriever] = None,
         model_id: str = "anthropic.claude-3-haiku-20240307-v1:0",
         region: str = "ap-south-1"
     ):
@@ -228,11 +227,13 @@ class EmergencyLLMService:
 
     def __init__(self, logger: logging.Logger, region: str = "ap-south-1"):
         self._logger = logger
+        self.error = None
         self.llm, error = _initialize_bedrock_llm(
             "anthropic.claude-3-haiku-20240307-v1:0",  # Fastest model
             region
         )
         if error:
+            self.error = error
             self._logger.error(f"Failed to initialize Emergency LLM: {error}")
 
     def get_emergency_rights(self, situation: str, language: str = "English") -> str:
