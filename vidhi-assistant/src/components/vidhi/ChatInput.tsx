@@ -1,13 +1,17 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Mic, Paperclip, X, Languages, Check } from "lucide-react";
+import { Send, Mic, Paperclip, X, Languages, Check, Square } from "lucide-react";
+
 import { motion, AnimatePresence } from "framer-motion";
 import AudioWave from "./AudioWave";
 import { toast } from "@/hooks/use-toast";
 import { INDIAN_LANGUAGES, type LanguageConfig } from "@/config/languages";
 
 interface ChatInputProps {
-  onSend: (text: string, language?: string, file?: File) => void;
+  onSend: (text: string, language?: string, files?: File[]) => void;
+  isLoading?: boolean;
+  onStop?: () => void;
 }
+
 
 // TypeScript interfaces for Web Speech API
 interface SpeechRecognitionEvent extends Event {
@@ -33,22 +37,27 @@ interface SpeechRecognitionAlternative {
   confidence: number;
 }
 
-const ChatInput = ({ onSend }: ChatInputProps) => {
+const ChatInput = ({ onSend, isLoading = false, onStop }: ChatInputProps) => {
+
   const [text, setText] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [recordingComplete, setRecordingComplete] = useState(false);
   const [transcript, setTranscript] = useState("");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [selectedLanguage, setSelectedLanguage] = useState<string>("hindi");
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const recognitionRef = useRef<any>(null);
   const languageMenuRef = useRef<HTMLDivElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const isCancelledRef = useRef<boolean>(false);
 
   useEffect(() => {
     return () => {
-      recognitionRef.current?.abort();
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      }
     };
   }, []);
 
@@ -70,15 +79,15 @@ const ChatInput = ({ onSend }: ChatInputProps) => {
 
   const handleSend = () => {
     const trimmed = text.trim();
-    if (!trimmed && !selectedFile) return;
+    if (!trimmed && selectedFiles.length === 0) return;
 
-    if (selectedFile || trimmed) {
-      const finalMsgText = trimmed || `Can you please analyze this file: ${selectedFile?.name}?`;
-      onSend(finalMsgText, selectedLanguage, selectedFile || undefined);
+    if (selectedFiles.length > 0 || trimmed) {
+      const finalMsgText = trimmed || `Can you please analyze these files: ${selectedFiles.map(f => f.name).join(', ')}?`;
+      onSend(finalMsgText, selectedLanguage, selectedFiles.length > 0 ? selectedFiles : undefined);
     }
 
     setText("");
-    setSelectedFile(null);
+    setSelectedFiles([]);
     setRecordingComplete(false);
     if (inputRef.current) {
       inputRef.current.style.height = "auto";
@@ -88,9 +97,10 @@ const ChatInput = ({ onSend }: ChatInputProps) => {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      if (!isLoading) handleSend();
     }
   };
+
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setText(e.target.value);
@@ -99,105 +109,76 @@ const ChatInput = ({ onSend }: ChatInputProps) => {
   };
 
   const startRecording = async () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      toast({
-        title: "Not supported",
-        description: "Speech recognition is not supported in your browser. Please use Chrome or Edge.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     try {
-      // Request mic permission explicitly
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // Detect the best supported audio format for this browser
+      const mimeType = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/ogg;codecs=opus',
+        'audio/ogg',
+        'audio/mp4',
+      ].find(type => MediaRecorder.isTypeSupported(type)) || '';
+
+      const mediaRecorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
+
+      audioChunksRef.current = [];
+      isCancelledRef.current = false;
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        stream.getTracks().forEach(track => track.stop());
+        if (!isCancelledRef.current) {
+          const actualMime = mediaRecorder.mimeType || 'audio/webm';
+          // Map MIME type to file extension
+          const ext = actualMime.includes('ogg') ? 'ogg'
+            : actualMime.includes('mp4') ? 'mp4'
+              : 'webm';
+          const audioBlob = new Blob(audioChunksRef.current, { type: actualMime });
+          const audioFile = new File([audioBlob], `voice_message.${ext}`, { type: actualMime });
+          onSend("", selectedLanguage, [audioFile]);
+        }
+        audioChunksRef.current = [];
+        setIsRecording(false);
+      };
+
+      mediaRecorderRef.current = mediaRecorder;
+      setIsRecording(true);
+      mediaRecorder.start(1000); // collect chunks every second
+
+    } catch (err) {
       toast({
         title: "Microphone access denied",
         description: "Please allow microphone access in your browser settings to use voice input.",
         variant: "destructive",
       });
-      return;
     }
-
-    const recognition = new SpeechRecognition();
-    recognition.lang = currentLanguage.bcp47; // Use selected language
-    recognition.interimResults = true;
-    recognition.continuous = true;
-
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      let interim = "";
-      let final = "";
-      for (let i = 0; i < event.results.length; i++) {
-        if (event.results[i].isFinal) {
-          final += event.results[i][0].transcript;
-        } else {
-          interim += event.results[i][0].transcript;
-        }
-      }
-      setTranscript(final + interim);
-    };
-
-    recognition.onerror = (event) => {
-      console.error("Speech recognition error:", event.error);
-      if (event.error === "not-allowed") {
-        toast({
-          title: "Microphone access denied",
-          description: "Please allow microphone access to use voice input.",
-          variant: "destructive",
-        });
-      } else if (event.error === "language-not-supported") {
-        toast({
-          title: "Language not supported",
-          description: `${currentLanguage.name} is not supported by your browser. Falling back to Hindi.`,
-          variant: "destructive",
-        });
-        setSelectedLanguage("hindi");
-      }
-      setIsRecording(false);
-      setTranscript("");
-    };
-
-    recognition.onend = () => {
-      // If still recording, it ended naturally
-      setIsRecording(false);
-    };
-
-    recognitionRef.current = recognition;
-    setTranscript("");
-    setIsRecording(true);
-    recognition.start();
   };
 
-  const stopRecording = () => {
-    recognitionRef.current?.stop();
-    setIsRecording(false);
 
-    // Don't auto-send, let user review and edit
-    if (transcript.trim()) {
-      setText(transcript.trim());
-      setRecordingComplete(true);
-      toast({
-        title: "Recording Complete",
-        description: "Review your message and click send, or continue editing.",
-      });
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
     }
-    setTranscript("");
   };
 
   const cancelRecording = () => {
-    recognitionRef.current?.abort();
-    setIsRecording(false);
-    setTranscript("");
-    setRecordingComplete(false);
+    isCancelledRef.current = true;
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
 
-    // Check file type
     const allowedTypes = [
       "application/pdf",
       "image/jpeg",
@@ -207,38 +188,42 @@ const ChatInput = ({ onSend }: ChatInputProps) => {
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ];
 
-    if (!allowedTypes.includes(file.type)) {
-      toast({
-        title: "Invalid file type",
-        description: "Please upload PDF, Word, or image files only.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Check file size (max 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      toast({
-        title: "File too large",
-        description: "Please upload files smaller than 10MB.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setSelectedFile(file);
-    toast({
-      title: "File selected",
-      description: `${file.name} (${(file.size / 1024).toFixed(1)} KB)`,
+    const validFiles = files.filter(file => {
+      if (!allowedTypes.includes(file.type)) {
+        toast({
+          title: "Invalid file type",
+          description: `${file.name} is not a supported file type.`,
+          variant: "destructive",
+        });
+        return false;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast({
+          title: "File too large",
+          description: `${file.name} is larger than 10MB.`,
+          variant: "destructive",
+        });
+        return false;
+      }
+      return true;
     });
+
+    if (validFiles.length > 0) {
+      setSelectedFiles(prev => [...prev, ...validFiles]);
+      toast({
+        title: "Files selected",
+        description: `Added ${validFiles.length} file(s)`,
+      });
+    }
   };
 
-  const removeFile = () => {
-    setSelectedFile(null);
+  const removeFile = (indexToRemove: number) => {
+    setSelectedFiles(prev => prev.filter((_, index) => index !== indexToRemove));
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
   };
+
 
   const toggleRecording = () => {
     if (isRecording) {
@@ -291,9 +276,6 @@ const ChatInput = ({ onSend }: ChatInputProps) => {
                 <X className="h-4 w-4 text-muted-foreground" />
               </button>
             </div>
-            {transcript && (
-              <p className="text-sm text-muted-foreground text-center italic">"{transcript}"</p>
-            )}
             <div className="flex items-center justify-center gap-2 mt-2">
               <button
                 onClick={stopRecording}
@@ -325,28 +307,29 @@ const ChatInput = ({ onSend }: ChatInputProps) => {
 
         {/* Top Controls Row inside the Input Box */}
         <div className="flex items-center justify-between px-2 pb-1">
-          {/* File Thumbnail Area */}
-          <div className="flex">
+          <div className="flex flex-wrap gap-2 mb-2">
             <AnimatePresence>
-              {selectedFile && (
+              {selectedFiles.map((file, index) => (
                 <motion.div
+                  key={`${file.name}-${index}`}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-background border border-border/50 shadow-[0_2px_8px_-4px_rgba(0,0,0,0.1)]"
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.9 }}
                 >
                   <Paperclip className="h-3.5 w-3.5 text-primary" />
-                  <span className="text-xs font-medium text-foreground max-w-[120px] truncate">{selectedFile.name}</span>
+                  <span className="text-xs font-medium text-foreground max-w-[120px] truncate">{file.name}</span>
                   <button
-                    onClick={removeFile}
+                    onClick={() => removeFile(index)}
                     className="p-0.5 rounded-full hover:bg-muted transition-colors ml-1"
                   >
                     <X className="h-3.5 w-3.5 text-muted-foreground" />
                   </button>
                 </motion.div>
-              )}
+              ))}
             </AnimatePresence>
           </div>
+
 
           {/* Language Selector (Top Right inside box) */}
           <div className="relative z-50 flex justify-end" ref={languageMenuRef}>
@@ -406,23 +389,41 @@ const ChatInput = ({ onSend }: ChatInputProps) => {
           <input
             ref={fileInputRef}
             type="file"
+            multiple
             accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
             onChange={handleFileSelect}
             className="hidden"
           />
+
 
           <textarea
             ref={inputRef}
             value={text}
             onChange={handleInput}
             onKeyDown={handleKeyDown}
-            placeholder={`Ask a legal question...`}
-            className="flex-1 bg-transparent py-3 mb-0.5 text-[15px] resize-none outline-none text-foreground placeholder:text-muted-foreground/70 max-h-[120px] min-h-[44px]"
+            placeholder={isLoading ? "Vidhi is thinking..." : `Ask a legal question...`}
+            disabled={isLoading}
+            className={`flex-1 bg-transparent py-3 mb-0.5 text-[15px] resize-none outline-none text-foreground placeholder:text-muted-foreground/70 max-h-[120px] min-h-[44px] transition-opacity ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
             rows={1}
             style={{ paddingLeft: '8px' }}
           />
 
-          {text.trim() || selectedFile ? (
+
+          {isLoading ? (
+            // Stop / Cancel button while AI is generating
+            <motion.button
+              onClick={onStop}
+              className="p-2 rounded-full bg-destructive text-destructive-foreground h-10 w-10 flex items-center justify-center shrink-0 mb-0.5 shadow-sm"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              animate={{ opacity: [1, 0.6, 1] }}
+              transition={{ repeat: Infinity, duration: 1.2 }}
+              aria-label="Stop generating"
+              title="Stop generating"
+            >
+              <Square className="h-4 w-4 fill-current" />
+            </motion.button>
+          ) : text.trim() || selectedFiles.length > 0 ? (
             <motion.button
               onClick={handleSend}
               className="p-2 rounded-full bg-primary text-primary-foreground h-10 w-10 flex items-center justify-center shrink-0 mb-0.5 shadow-sm"
@@ -446,6 +447,7 @@ const ChatInput = ({ onSend }: ChatInputProps) => {
               <Mic className="h-5 w-5" />
             </motion.button>
           )}
+
         </div>
       </div>
     </div>

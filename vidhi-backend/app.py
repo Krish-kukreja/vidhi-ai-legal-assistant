@@ -9,7 +9,7 @@ from pydantic import BaseModel
 import logging
 import os
 import time
-from typing import Optional
+from typing import Optional, List
 
 # --- ADD THESE THREE LINES HERE ---
 logging.basicConfig(level=logging.INFO)
@@ -266,7 +266,7 @@ async def health_check():
 @app.post("/chat", response_model=ChatResponse)
 async def chat(
     text: Optional[str] = Form(None),
-    file: Optional[UploadFile] = File(None),
+    files: List[UploadFile] = File(default=[]),
     language: str = Form("hindi"),
     language_code: str = Form("hi-IN"),
     use_aws_stt: bool = Form(False)
@@ -278,58 +278,147 @@ async def chat(
     try:
         user_input = None
         
-        # Handle voice input
-        if file:
-            logger.info(f"Processing voice input: {file.filename}")
+        # Handle file input (voice or document)
+        if files and len(files) > 0:
+            extracted_texts = []
+            audio_processed = False
             
-            # Read audio data
-            audio_data = await file.read()
-            
-            # Use hybrid STT (browser first, AWS fallback)
-            if not use_aws_stt and config.USE_BROWSER_STT_FIRST:
-                return JSONResponse({
-                    "use_browser_stt": True,
-                    "message": "Please use browser speech recognition",
-                    "supported_languages": config.TRANSCRIBE_SUPPORTED_LANGUAGES
-                })
-            
-            # Use AWS Transcribe
-            if transcribe_service:
-                # Upload to S3 and transcribe
-                timestamp = int(time.time())
-                s3_key = f"transcribe-input/{timestamp}.wav"
-                s3_uri = transcribe_service.upload_audio_to_s3(
-                    audio_data,
-                    config.S3_BUCKET_AUDIO,
-                    s3_key
-                )
+            for file in files:
+                logger.info(f"Processing uploaded file: {file.filename}")
                 
-                result = transcribe_service.transcribe_audio(
-                    s3_uri,
-                    language_code,
-                    identify_language=True
-                )
+                # Check if file has an actual filename (some frameworks send empty files for empty arrays)
+                if not file.filename:
+                    continue
+                    
+                # Read file data
+                file_data = await file.read()
+                mime_type = file.content_type
                 
-                if result['success']:
-                    user_input = result['transcript']
-                    language_code = result['language_code']
-                    logger.info(f"Transcribed: {user_input[:50]}...")
-                else:
-                    raise HTTPException(status_code=500, detail=result['error'])
-            else:
-                raise HTTPException(status_code=503, detail="Transcribe service not available")
-        
-        # Handle text input
+                # Check if it's an audio file
+                is_audio = (mime_type and mime_type.startswith('audio/')) or file.filename.lower().endswith(('.wav', '.mp3', '.m4a', '.ogg', '.webm'))
+
+                
+                if is_audio and not audio_processed:
+                    # Only process the first audio file as voice input
+                    audio_processed = True
+                    # Use hybrid STT (browser first, AWS fallback)
+                    if not use_aws_stt and config.USE_BROWSER_STT_FIRST:
+                        return JSONResponse({
+                            "use_browser_stt": True,
+                            "message": "Please use browser speech recognition",
+                            "supported_languages": config.TRANSCRIBE_SUPPORTED_LANGUAGES
+                        })
+                    
+                    # Use AWS Transcribe
+                    if transcribe_service:
+                        # Detect media format from filename extension
+                        fname = file.filename.lower()
+                        if fname.endswith('.webm'):
+                            media_format = 'webm'
+                        elif fname.endswith('.ogg'):
+                            media_format = 'ogg'
+                        elif fname.endswith('.mp4') or fname.endswith('.m4a'):
+                            media_format = 'mp4'
+                        elif fname.endswith('.mp3'):
+                            media_format = 'mp3'
+                        elif fname.endswith('.flac'):
+                            media_format = 'flac'
+                        else:
+                            media_format = 'wav'
+
+                        # Upload to S3 and transcribe
+                        timestamp = int(time.time())
+                        s3_key = f"transcribe-input/{timestamp}.{media_format}"
+                        s3_uri = transcribe_service.upload_audio_to_s3(
+                            file_data,
+                            config.S3_BUCKET_AUDIO,
+                            s3_key
+                        )
+                        
+                        result = transcribe_service.transcribe_audio(
+                            s3_uri,
+                            language_code,
+                            identify_language=True,
+                            media_format=media_format
+                        )
+
+                        
+                        if result['success']:
+                            # Using audio transcript as the main text
+                            user_input = result['transcript']
+                            language_code = result['language_code']
+                            logger.info(f"Transcribed: {user_input[:50]}...")
+                        else:
+                            raise HTTPException(status_code=500, detail=result['error'])
+                    else:
+                        # AWS Transcribe is not configured — return graceful AI response
+                        logger.warning("Transcribe service not available, returning fallback response")
+                        return JSONResponse({
+                            "response": "I received your voice message, but voice transcription (AWS Transcribe) is not currently configured on this server. Please type your question instead, or ask the administrator to set up AWS Transcribe.",
+                            "audio_url": None,
+                            "language": language,
+                            "from_cache": False
+                        })
+
+                
+                # If it's a document (PDF, DOCX, TXT, Image)
+                elif not is_audio:
+                    try:
+                        import io
+                        doc_text = ""
+                        
+                        if file.filename.lower().endswith('.pdf'):
+                            import PyPDF2
+                            pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_data))
+                            for page in pdf_reader.pages:
+                                doc_text += page.extract_text() + "\n"
+                        
+                        elif file.filename.lower().endswith('.docx'):
+                            import docx
+                            doc = docx.Document(io.BytesIO(file_data))
+                            doc_text = "\n".join([paragraph.text for paragraph in doc.paragraphs])
+                        
+                        elif file.filename.lower().endswith('.txt'):
+                            doc_text = file_data.decode('utf-8')
+                            
+                        else:
+                            doc_text = f"[User attached a file named {file.filename} but text extraction for this format is currently limited.]"
+                        
+                        extracted_texts.append(f"--- Document: {file.filename} ---\n{doc_text[:4000]}...")
+                        logger.info(f"Extracted document text from {file.filename}")
+                        
+                    except Exception as e:
+                        logger.error(f"Error parsing document {file.filename}: {str(e)}")
+                        extracted_texts.append(f"--- Document: {file.filename} ---\n[Error extracting text]")
+            
+            # Combine all document texts
+            if extracted_texts:
+                combined_docs = "\n\n".join(extracted_texts)
+                base_text = user_input if user_input else text
+                if not base_text:
+                    base_text = "Please analyze the attached document(s)."
+                user_input = f"{base_text}\n\n[Attached Documents Content Start]\n{combined_docs}\n[Attached Documents Content End]"
+                    
+        # Handle text input without file
         elif text:
             user_input = text
+
         else:
             raise HTTPException(status_code=400, detail="Either text or audio file is required")
         
+        # Safety guard — ensure user_input is never None at this point
+        if not user_input:
+            if text:
+                user_input = text
+            else:
+                raise HTTPException(status_code=400, detail="Either text or audio file is required")
+
         # Query LLM with RAG
         if not llm_service or llm_service.error:
             raise HTTPException(status_code=503, detail="LLM service not available")
         
         logger.info(f"Querying LLM: {user_input[:50]}...")
+
         ai_response = llm_service.query(user_input, language)
         
         # Generate voice output

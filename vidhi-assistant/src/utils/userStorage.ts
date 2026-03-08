@@ -24,10 +24,29 @@ export interface ChatFolder {
   name: string;
 }
 
+/**
+ * Get the canonical user key from the auth token.
+ * This is used to scope all localStorage data to the current user,
+ * so different users on the same browser don't see each other's history.
+ */
+const getUserKey = (): string => {
+  const authToken = localStorage.getItem("vidhi_auth");
+  if (!authToken) return "guest_default";
+  // Sanitize the token to be a safe localStorage key
+  return authToken.replace(/[^a-zA-Z0-9_]/g, "_");
+};
+
+/**
+ * Return the scoped localStorage key for chat history.
+ */
+const historyKey = () => `vidhi_chat_history_${getUserKey()}`;
+const foldersKey = () => `vidhi_chat_folders_${getUserKey()}`;
+const userDataKey = () => `vidhi_user_data_${getUserKey()}`;
+
 // Get user data from localStorage
 export const getUserData = (): UserData | null => {
   const authToken = localStorage.getItem("vidhi_auth");
-  const storedUserData = localStorage.getItem("vidhi_user_data");
+  const storedUserData = localStorage.getItem(userDataKey());
 
   if (!authToken) {
     return null;
@@ -93,7 +112,7 @@ export const getUserData = (): UserData | null => {
 
 // Save user data to localStorage
 export const saveUserData = (userData: UserData) => {
-  localStorage.setItem("vidhi_user_data", JSON.stringify(userData));
+  localStorage.setItem(userDataKey(), JSON.stringify(userData));
 };
 
 // Update user name
@@ -114,7 +133,6 @@ export const updateLastActive = () => {
   }
 };
 
-
 // Increment chat count
 export const incrementChatCount = () => {
   const userData = getUserData();
@@ -126,7 +144,7 @@ export const incrementChatCount = () => {
 
 // --- FOLDERS API ---
 export const getFolders = (): ChatFolder[] => {
-  const folders = localStorage.getItem("vidhi_chat_folders");
+  const folders = localStorage.getItem(foldersKey());
   if (!folders) return [];
   return JSON.parse(folders);
 };
@@ -138,26 +156,26 @@ export const createFolder = (name: string): ChatFolder => {
     name,
   };
   folders.push(newFolder);
-  localStorage.setItem("vidhi_chat_folders", JSON.stringify(folders));
+  localStorage.setItem(foldersKey(), JSON.stringify(folders));
   return newFolder;
 };
 
 export const deleteFolder = (id: string) => {
   const folders = getFolders();
   const updatedFolders = folders.filter((f) => f.id !== id);
-  localStorage.setItem("vidhi_chat_folders", JSON.stringify(updatedFolders));
+  localStorage.setItem(foldersKey(), JSON.stringify(updatedFolders));
 
   // Remove folderId from any chats in this folder
   const history = getChatHistory();
   const updatedHistory = history.map(chat =>
     chat.folderId === id ? { ...chat, folderId: undefined } : chat
   );
-  localStorage.setItem("vidhi_chat_history", JSON.stringify(updatedHistory));
+  localStorage.setItem(historyKey(), JSON.stringify(updatedHistory));
 };
 
 // --- CHAT HISTORY API ---
 export const getChatHistory = (): ChatHistoryItem[] => {
-  const history = localStorage.getItem("vidhi_chat_history");
+  const history = localStorage.getItem(historyKey());
   if (!history) {
     return [];
   }
@@ -180,27 +198,43 @@ export const saveChatToHistory = (title: string, messages: any[]) => {
 
   // Add to beginning of array
   history.unshift(newChat);
-  // Optional: you can un-cap to say keep 100 instead of 10 if you want folders
   const trimmedHistory = history.slice(0, 100);
 
-  localStorage.setItem("vidhi_chat_history", JSON.stringify(trimmedHistory));
+  localStorage.setItem(historyKey(), JSON.stringify(trimmedHistory));
   incrementChatCount();
+  window.dispatchEvent(new CustomEvent('vidhi-chat-updated'));
   return newChat;
 };
+
 
 export const updateChatDetails = (id: string, updates: Partial<ChatHistoryItem>) => {
   const history = getChatHistory();
   const updatedHistory = history.map(chat =>
     chat.id === id ? { ...chat, ...updates } : chat
   );
-  localStorage.setItem("vidhi_chat_history", JSON.stringify(updatedHistory));
+  localStorage.setItem(historyKey(), JSON.stringify(updatedHistory));
+  window.dispatchEvent(new CustomEvent('vidhi-chat-updated'));
 };
 
-// Clear user data (logout)
+
+/**
+ * Permanently delete a chat from the history by its ID.
+ */
+export const deleteChat = (id: string) => {
+  const history = getChatHistory();
+  const updatedHistory = history.filter(chat => chat.id !== id);
+  localStorage.setItem(historyKey(), JSON.stringify(updatedHistory));
+  window.dispatchEvent(new CustomEvent('vidhi-chat-updated'));
+};
+
+
+// Clear user data (logout) — only clears this user's scoped data
 export const clearUserData = () => {
+  const key = getUserKey();
   localStorage.removeItem("vidhi_auth");
-  localStorage.removeItem("vidhi_user_data");
-  localStorage.removeItem("vidhi_chat_history");
+  localStorage.removeItem(`vidhi_user_data_${key}`);
+  localStorage.removeItem(`vidhi_chat_history_${key}`);
+  localStorage.removeItem(`vidhi_chat_folders_${key}`);
 };
 
 // Get display name for user

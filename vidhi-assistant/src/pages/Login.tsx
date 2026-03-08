@@ -26,8 +26,14 @@ const Login = () => {
   const [phoneOtp, setPhoneOtp] = useState("");
   const [phoneOtpSent, setPhoneOtpSent] = useState(false);
 
-  // Guest mode
   const handleGuestLogin = () => {
+    // Get or create a unique guest ID so each guest session is isolated
+    let guestId = localStorage.getItem("vidhi_guest_id");
+    if (!guestId) {
+      guestId = `guest_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      localStorage.setItem("vidhi_guest_id", guestId);
+    }
+
     const userData: UserData = {
       name: "Guest User",
       authMethod: "guest",
@@ -40,7 +46,7 @@ const Login = () => {
       lastActive: "Just now",
     };
     saveUserData(userData);
-    localStorage.setItem("vidhi_auth", "guest");
+    localStorage.setItem("vidhi_auth", guestId);
 
     toast({
       title: "Guest Mode",

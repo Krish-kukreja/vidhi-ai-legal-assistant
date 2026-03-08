@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import UserProfileDialog from "./UserProfileDialog";
 import {
   getUserData, getChatHistory, getDisplayName, getUserInitials,
-  getFolders, createFolder, deleteFolder, updateChatDetails
+  getFolders, createFolder, deleteFolder, updateChatDetails, deleteChat
 } from "@/utils/userStorage";
 import type { UserData, ChatHistoryItem, ChatFolder } from "@/utils/userStorage";
 
@@ -48,10 +48,24 @@ const ChatSidebar = ({ isOpen, onClose, onNewChat, onSelectChat, activeChatId }:
   };
 
   useEffect(() => {
+    // Load on mount always
+    loadData();
+  }, []);
+
+  useEffect(() => {
     if (isOpen) {
       loadData();
     }
   }, [isOpen]);
+
+  // Refresh whenever any chat is saved, updated, or deleted
+  useEffect(() => {
+    const handler = () => loadData();
+    window.addEventListener('vidhi-chat-updated', handler);
+    return () => window.removeEventListener('vidhi-chat-updated', handler);
+  }, []);
+
+
 
   const handleCreateFolder = () => {
     if (newFolderName.trim()) {
@@ -153,6 +167,7 @@ const ChatSidebar = ({ isOpen, onClose, onNewChat, onSelectChat, activeChatId }:
                       onSelect={() => onSelectChat && onSelectChat(chat.id)}
                       onEdit={() => { setEditingChat(chat); setEditTitle(chat.title); setEditDescription(chat.description || ""); setIsEditDialogOpen(true); }}
                       onMove={(fId) => moveToFolder(chat.id, fId)}
+                      onDelete={() => { deleteChat(chat.id); loadData(); }}
                     />
                   ))
                 )}
@@ -178,6 +193,7 @@ const ChatSidebar = ({ isOpen, onClose, onNewChat, onSelectChat, activeChatId }:
                   onSelect={() => onSelectChat && onSelectChat(chat.id)}
                   onEdit={() => { setEditingChat(chat); setEditTitle(chat.title); setEditDescription(chat.description || ""); setIsEditDialogOpen(true); }}
                   onMove={(fId) => moveToFolder(chat.id, fId)}
+                  onDelete={() => { deleteChat(chat.id); loadData(); }}
                 />
               ))
             )}
@@ -263,14 +279,16 @@ const ChatItem = ({
   isActive,
   onSelect,
   onEdit,
-  onMove
+  onMove,
+  onDelete
 }: {
   chat: ChatHistoryItem,
   folders: ChatFolder[],
   isActive: boolean,
   onSelect: () => void,
   onEdit: () => void,
-  onMove: (id?: string) => void
+  onMove: (id?: string) => void,
+  onDelete: () => void
 }) => {
   return (
     <div className={`w-full flex items-center gap-2 group relative rounded-lg transition-colors ${isActive ? 'bg-sidebar-accent' : 'hover:bg-sidebar-accent'}`}>
@@ -309,6 +327,11 @@ const ChatItem = ({
                 <Folder className="mr-2 h-4 w-4" /> Remove from Folder
               </DropdownMenuItem>
             )}
+
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="text-destructive" onClick={onDelete}>
+              <Trash2 className="mr-2 h-4 w-4" /> Delete Chat
+            </DropdownMenuItem>
 
           </DropdownMenuContent>
         </DropdownMenu>

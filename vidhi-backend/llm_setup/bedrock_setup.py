@@ -191,7 +191,10 @@ Provide a clear, accurate, and actionable response:"""
             response = self._conversational_rag_chain.invoke(question_with_language)
             return response
         except Exception as e:
-            self._logger.error(f"Error querying RAG system: {e}")
+            import traceback
+            with open("llm_error.log", "w") as f:
+                f.write(traceback.format_exc())
+            self._logger.exception(f"Error querying RAG system: {e}")
             return f"I apologize, but I encountered an error processing your question. Please try again."
 
     def query_with_context(self, question: str, context: str, language: str = "English") -> str:

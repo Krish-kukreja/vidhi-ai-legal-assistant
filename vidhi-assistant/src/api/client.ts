@@ -10,7 +10,7 @@ export interface QueryRequest {
   language: string;
   language_code: string;
   use_aws_stt?: boolean;
-  file?: File;
+  files?: File[];
 }
 
 export interface QueryResponse {
@@ -42,7 +42,7 @@ export interface LanguagesResponse {
 /**
  * Send a chat query to the backend
  */
-export async function sendQuery(request: QueryRequest): Promise<QueryResponse> {
+export async function sendQuery(request: QueryRequest, signal?: AbortSignal): Promise<QueryResponse> {
   const formData = new FormData();
   formData.append('text', request.text);
   formData.append('language', request.language);
@@ -50,13 +50,16 @@ export async function sendQuery(request: QueryRequest): Promise<QueryResponse> {
   if (request.use_aws_stt !== undefined) {
     formData.append('use_aws_stt', request.use_aws_stt.toString());
   }
-  if (request.file) {
-    formData.append('file', request.file, request.file.name);
+  if (request.files && request.files.length > 0) {
+    request.files.forEach(file => {
+      formData.append('files', file, file.name);
+    });
   }
 
   const response = await fetch(`${API_BASE_URL}/chat`, {
     method: 'POST',
     body: formData,
+    signal,
   });
 
   if (!response.ok) {

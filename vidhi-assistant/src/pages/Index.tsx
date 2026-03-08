@@ -19,6 +19,8 @@ const Index = () => {
   const [chatStarted, setChatStarted] = useState(false);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
 
   const handleSelectChat = (chatId: string) => {
     const history = getChatHistory();
@@ -52,17 +54,34 @@ const Index = () => {
   }, []);
 
   const handleNewChat = () => {
+    // Cancel any in-flight request so its response doesn't pollute the new chat
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsTyping(false);
     setActiveChatId(null);
     setMessages([]);
     setChatStarted(false);
     setSidebarOpen(false);
   };
 
-  const sendMessage = async (text: string, language?: string) => {
+
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsTyping(false);
+  };
+
+  const sendMessage = async (text: string, language?: string, files?: File[]) => {
+    if (isTyping) return; // Don't allow new messages while processing
     const langKey = language || "hindi";
+
     const userMsg: Message = {
       id: Date.now().toString(),
-      text,
+      text: files && files.length > 0 && !text ? (files.length === 1 && files[0].type.startsWith('audio/') ? "🎵 Voice message" : `📄 ${files.length} Document(s) attached`) : text || "📄 Document attached",
       sender: "user",
       language: langKey,
       timestamp: new Date(),
@@ -79,12 +98,18 @@ const Index = () => {
     try {
       const languageConfig = INDIAN_LANGUAGES[langKey] || INDIAN_LANGUAGES.hindi;
 
+      // Create an AbortController so the user can cancel mid-request
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
       const response = await sendQuery({
         text: text,
         language: languageConfig.name,
         language_code: languageConfig.bcp47,
-        use_aws_stt: false
-      });
+        use_aws_stt: files && files.length > 0 && files[0].type.startsWith('audio/'),
+        files: files
+      }, controller.signal);
+
 
       const aiMsg: Message = {
         id: (Date.now() + 1).toString(),
@@ -123,17 +148,32 @@ const Index = () => {
       }
 
     } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        // User cancelled — just show a small note, no error
+        setMessages((prev) => [...prev, {
+          id: (Date.now() + 1).toString(),
+          text: "⚡ Response cancelled.",
+          sender: "ai",
+          language: "english",
+          timestamp: new Date(),
+        }]);
+        return;
+      }
       console.error("Chat error:", error);
+      const errMsg = error?.message || "Unknown error";
+
       toast({
-        title: "Connection Error",
-        description: "Could not connect to the backend AI server. Is it running?",
+        title: "Error",
+        description: errMsg,
         variant: "destructive"
       });
 
       // Add error message to chat
       const errorMsg: Message = {
         id: (Date.now() + 1).toString(),
-        text: "Sorry, I am having trouble connecting to my AI backend. Please ensure the backend server is running on port 8000.",
+        text: errMsg.includes("fetch") || errMsg.includes("Failed")
+          ? "Sorry, I am having trouble connecting to my AI backend. Please ensure the backend server is running on port 8000."
+          : `⚠️ ${errMsg}`,
         sender: "ai",
         language: "english",
         timestamp: new Date(),
@@ -144,6 +184,7 @@ const Index = () => {
       updateLastActive();
     }
   };
+
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
@@ -186,7 +227,8 @@ const Index = () => {
               <QuickActions onAction={sendMessage} />
             </div>
           )}
-          <ChatInput onSend={sendMessage} />
+          <ChatInput onSend={sendMessage} isLoading={isTyping} onStop={handleStopGeneration} />
+
           <div className="text-center mt-3 text-xs text-muted-foreground">
             VIDHI may display inaccurate info, including about people, so double-check its responses.
           </div>

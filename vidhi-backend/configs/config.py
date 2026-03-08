@@ -94,7 +94,8 @@ ENABLE_SCHEME_MATCHING = os.getenv("ENABLE_SCHEME_MATCHING", "True").lower() == 
 ENABLE_CACHING = os.getenv("ENABLE_CACHING", "True").lower() == "true"
 
 # Cost Optimization
-USE_BROWSER_STT_FIRST = True  # Use browser Web Speech API before AWS Transcribe
+USE_BROWSER_STT_FIRST = False  # Send audio directly to AWS Transcribe
+
 PRECOMPUTE_EMBEDDINGS = True  # Pre-compute embeddings for schemes
 CACHE_COMMON_QUERIES = True  # Cache frequently asked questions
 
