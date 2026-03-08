@@ -259,6 +259,11 @@ embeddings/
 
 # Scraped data
 *.json
+!package.json
+!package-lock.json
+!tsconfig*.json
+!components.json
+!eslint.config.js
 myschemes_scraped.json
 schemes_data.json
 
