@@ -73,8 +73,8 @@ except ImportError as e:
 
 try:
     from speech.bhashini import BhashiniService
-    BHASHINI_AVAILABLE = True
-    logger.info("Bhashini service available")
+    BHASHINI_AVAILABLE = False # Disabled by user request
+    logger.info("Bhashini service imported but set to False")
 except ImportError as e:
     logger.warning(f"Bhashini service not available: {e}")
 
@@ -109,6 +109,12 @@ async def startup_event():
         try:
             # Initialize LLM services
             logger.info("Initializing Bedrock services...")
+            llm_service = BedrockLLMService(logger, retriever=vectorstore)
+            if llm_service.error:
+                logger.error(f"Error initializing primary BedrockLLMService: {llm_service.error}")
+            else:
+                logger.info("Primary Bedrock LLM initialized")
+                
             emergency_llm = EmergencyLLMService(logger)
             if emergency_llm.error:
                 logger.error(f"Error from within EmergencyLLMService: {emergency_llm.error}")
@@ -199,14 +205,14 @@ async def chat(
         
         logger.info(f"Chat request: {text[:50]}... in {language}")
         
-        # If emergency LLM is available, use it
-        if emergency_llm:
+        # If primary LLM is available, use it
+        if llm_service:
             try:
-                response = emergency_llm.get_emergency_rights(text, language)
+                response = llm_service.get_response(text, language)
                 return {
                     "response": response,
                     "language": language,
-                    "source": "bedrock_emergency_llm",
+                    "source": "bedrock_llm",
                     "audio_url": None
                 }
             except Exception as e:
