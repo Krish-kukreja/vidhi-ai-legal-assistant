@@ -217,7 +217,7 @@ const Login = () => {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
-            <Shield className="h-16 w-16 text-primary" />
+            <img src="/logo.png" alt="Vidhi Logo" className="h-20 w-auto object-contain" />
           </div>
           <CardTitle className="text-3xl font-bold">VIDHI</CardTitle>
           <CardDescription>

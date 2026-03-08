@@ -42,8 +42,8 @@ const TopBar = ({ onMenuClick, onSOSClick }: TopBarProps) => {
             <Menu className="h-5 w-5 text-foreground" />
           </button>
           <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center">
-              <Scale className="h-5 w-5 text-primary-foreground" />
+            <div className="w-10 h-10 flex items-center justify-center">
+              <img src="/logo.png" alt="Vidhi Logo" className="w-full h-full object-contain" />
             </div>
             <div>
               <h1 className="text-lg font-bold text-foreground leading-none">VIDHI</h1>
