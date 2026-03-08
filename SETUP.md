@@ -70,5 +70,15 @@ The backend should now be running at `http://localhost:8000`.
 ## 5. You're Done!
 Open your browser and navigate to `http://localhost:8081`. The VIDHI app is now fully functional on your new laptop!
 
-### Optional: AWS Credentials
-If you eventually want the AI to work, add your `.env` file into the `vidhi-backend` folder with your AWS Access Keys. If that file is missing, the backend will just reply with friendly fallback messages.
+### 6. Connect your AWS IAM User (Required for the AI)
+The user account you created yesterday in AWS is necessary to give the backend permission to use Bedrock (Claude) and Polly (Voice).
+
+1. In your `vidhi-backend` folder on the new laptop, create a new file named exactly `.env` (don't forget the dot!).
+2. Open the file and paste your credentials like this:
+```env
+AWS_ACCESS_KEY_ID=your_access_key_here
+AWS_SECRET_ACCESS_KEY=your_secret_key_here
+AWS_REGION=ap-south-1
+```
+3. Save the file.
+4. Restart your `uvicorn` backend server. It will automatically read those keys and the AI will wake up!
