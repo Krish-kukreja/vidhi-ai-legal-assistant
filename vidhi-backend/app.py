@@ -14,6 +14,13 @@ from typing import Optional
 # Import configurations
 from configs import config
 
+# Set up logging FIRST (before any imports that might use it)
+logging.basicConfig(
+    level=logging.INFO,  # Default level, will be updated from config later
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 # Try to import optional services - gracefully handle missing dependencies
 try:
     from llm_setup.bedrock_setup import BedrockLLMService, EmergencyLLMService
@@ -79,12 +86,12 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-# Set up logging
+# Update logging level from config
 logging.basicConfig(
     level=getattr(logging, config.LOG_LEVEL),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    force=True  # Override the earlier basicConfig
 )
-logger = logging.getLogger(__name__)
 
 # Initialize services
 embeddings = None
