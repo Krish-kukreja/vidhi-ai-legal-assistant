@@ -39,8 +39,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -231,7 +231,7 @@ dist
 
 # Gatsby files
 .cache/
-public
+# public
 
 # Storybook build outputs
 .out
@@ -259,6 +259,11 @@ embeddings/
 
 # Scraped data
 *.json
+!package.json
+!package-lock.json
+!tsconfig*.json
+!components.json
+!eslint.config.js
 myschemes_scraped.json
 schemes_data.json
 
