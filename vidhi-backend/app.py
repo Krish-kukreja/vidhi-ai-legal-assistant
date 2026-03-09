@@ -2,6 +2,10 @@
 VIDHI Backend - FastAPI Application
 Adapted from UdhaviBot with AWS services
 """
+import os
+# Fix ChromaDB Pydantic v2 compatibility issue
+os.environ['PYDANTIC_SKIP_VALIDATING_CORE_SCHEMAS'] = '1'
+
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -73,6 +77,11 @@ except ImportError as e:
     DOCUMENT_PROCESSING_AVAILABLE = False
 
 try:
+    # ChromaDB not compatible with Python 3.14+
+    import sys
+    if sys.version_info >= (3, 14):
+        raise ImportError("ChromaDB not compatible with Python 3.14+")
+    
     from stores.chroma import store_embeddings, load_vectorstore, create_retriever
     CHROMA_AVAILABLE = True
 except ImportError as e:
