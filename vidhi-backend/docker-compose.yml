@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  vidhi-backend:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - AWS_REGION=ap-south-1
+      - BHASHINI_API_KEY=${BHASHINI_API_KEY}
+      - BHASHINI_USER_ID=${BHASHINI_USER_ID}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - LOG_LEVEL=INFO
+      - ENABLE_VOICE_INPUT=true
+      - ENABLE_DOCUMENT_ANALYSIS=true
+      - ENABLE_SCHEME_MATCHING=true
+    volumes:
+      - ./chroma_db:/app/chroma_db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
