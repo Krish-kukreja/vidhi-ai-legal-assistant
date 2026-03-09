@@ -3,7 +3,7 @@
  * Connects frontend to backend API
  */
 
-const API_BASE_URL = 'https://pphr733kng.ap-south-1.awsapprunner.com/';
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
 
 export interface QueryRequest {
   text: string;
