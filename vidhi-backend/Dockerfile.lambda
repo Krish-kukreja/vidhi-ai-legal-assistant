@@ -1,0 +1,35 @@
+FROM public.ecr.aws/lambda/python:3.12
+
+# Install system dependencies needed for specific Python packages
+RUN dnf update -y && \
+    dnf install -y gcc gcc-c++ make git wget tar xz \
+    alsa-lib-devel openssl-devel bzip2-devel libffi-devel \
+    libsqlite3x-devel xz-devel zlib-devel readline-devel \
+    findutils mesa-libGL glib2
+
+# Unfortunately yum/dnf doesn't always have a straightforward ffmpeg on Amazon Linux 2023.
+# We will download a static build of ffmpeg for audio processing.
+RUN wget https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz && \
+    tar xvf ffmpeg-release-amd64-static.tar.xz && \
+    mv ffmpeg-*-amd64-static/ffmpeg /usr/local/bin/ && \
+    mv ffmpeg-*-amd64-static/ffprobe /usr/local/bin/ && \
+    rm -rf ffmpeg*
+
+# Copy requirements.txt
+COPY requirements.txt ${LAMBDA_TASK_ROOT}
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code folders and files
+COPY app.py ${LAMBDA_TASK_ROOT}
+COPY llm_setup ${LAMBDA_TASK_ROOT}/llm_setup/
+COPY configs ${LAMBDA_TASK_ROOT}/configs/
+COPY processing ${LAMBDA_TASK_ROOT}/processing/
+COPY services ${LAMBDA_TASK_ROOT}/services/
+COPY speech ${LAMBDA_TASK_ROOT}/speech/
+COPY stores ${LAMBDA_TASK_ROOT}/stores/
+COPY utils ${LAMBDA_TASK_ROOT}/utils/
+
+# Command to allow Lambda to know how to start your application
+CMD [ "app.handler" ]
