@@ -4,7 +4,7 @@ FROM public.ecr.aws/lambda/python:3.12
 RUN dnf update -y && \
     dnf install -y gcc gcc-c++ make git wget tar xz \
     alsa-lib-devel openssl-devel bzip2-devel libffi-devel \
-    libsqlite3x-devel xz-devel zlib-devel readline-devel \
+    sqlite-devel xz-devel zlib-devel readline-devel \
     findutils mesa-libGL glib2
 
 # Unfortunately yum/dnf doesn't always have a straightforward ffmpeg on Amazon Linux 2023.

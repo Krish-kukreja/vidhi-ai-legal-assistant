@@ -114,7 +114,7 @@ app = FastAPI(
 # For AWS Lambda deployment
 try:
     from mangum import Mangum
-    handler = Mangum(app)
+    handler = Mangum(app, text_mime_types=[app.openapi_url, "application/json", "text/plain"])
 except ImportError:
     handler = None
 

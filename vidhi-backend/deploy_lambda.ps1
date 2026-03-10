@@ -12,22 +12,22 @@ Write-Host "`n Deploying VIDHI Backend to AWS Lambda (Container Image) in Region
 
 # 1. Get AWS Account ID
 try {
-  $AWS_ACCOUNT_ID = (aws sts get-caller-identity --query Account --output text)
-  Write-Host "AWS Account: $AWS_ACCOUNT_ID"
+    $AWS_ACCOUNT_ID = (aws sts get-caller-identity --query Account --output text)
+    Write-Host "AWS Account: $AWS_ACCOUNT_ID"
 }
 catch {
-  Write-Host " Error: AWS CLI not configured. Run 'aws configure' first." -ForegroundColor Red
-  exit 1
+    Write-Host " Error: AWS CLI not configured. Run 'aws configure' first." -ForegroundColor Red
+    exit 1
 }
 
 # 2. Check/Create ECR repository
 Write-Host "`n Checking ECR repository ($ECR_REPOSITORY)..." -ForegroundColor Cyan
 try {
-  aws ecr describe-repositories --repository-names $ECR_REPOSITORY --region $AWS_REGION > $null 2>&1
+    aws ecr describe-repositories --repository-names $ECR_REPOSITORY --region $AWS_REGION > $null 2>&1
 }
 catch {
-  Write-Host "Creating ECR repository..."
-  aws ecr create-repository --repository-name $ECR_REPOSITORY --region $AWS_REGION > $null
+    Write-Host "Creating ECR repository..."
+    aws ecr create-repository --repository-name $ECR_REPOSITORY --region $AWS_REGION > $null
 }
 
 # 3. Login to ECR
@@ -36,7 +36,9 @@ aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --
 
 # 4. Build Docker image for Lambda
 Write-Host "`n Building Docker image for Lambda..." -ForegroundColor Cyan
+$ErrorActionPreference = "Continue"
 docker build -f Dockerfile.lambda -t "${ECR_REPOSITORY}:${IMAGE_TAG}" .
+$ErrorActionPreference = "Stop"
 
 # 5. Tag and push image
 Write-Host "`n Pushing image to ECR..." -ForegroundColor Cyan
@@ -52,7 +54,8 @@ $LambdaExists = $false
 try {
     aws lambda list-tags --resource "arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:${LAMBDA_FUNCTION_NAME}" > $null 2>&1
     $LambdaExists = $true
-} catch {
+}
+catch {
     $LambdaExists = $false
 }
 
@@ -63,7 +66,8 @@ if ($LambdaExists) {
     
     Write-Host "Waiting for update to complete..."
     aws lambda wait function-updated-v2 --function-name $LAMBDA_FUNCTION_NAME --region $AWS_REGION
-} else {
+}
+else {
     Write-Host "Creating new Lambda function. NOTE: This requires appropriate execution role."
     Write-Host "We will create a basic execution role first..."
     
@@ -73,7 +77,8 @@ if ($LambdaExists) {
     try {
         aws iam get-role --role-name $ROLE_NAME > $null 2>&1
         Write-Host "Role $ROLE_NAME already exists."
-    } catch {
+    }
+    catch {
         aws iam create-role --role-name $ROLE_NAME --assume-role-policy-document $TRUST_POLICY > $null
         aws iam attach-role-policy --role-name $ROLE_NAME --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole > $null
         # Needs S3 and Bedrock access too usually. Adding broad access for ease in this phase, tighten later.
@@ -103,7 +108,8 @@ Write-Host "`n Configuring Lambda Function URL..." -ForegroundColor Cyan
 try {
     aws lambda get-function-url-config --function-name $LAMBDA_FUNCTION_NAME --region $AWS_REGION > $null 2>&1
     Write-Host "Function URL already configured."
-} catch {
+}
+catch {
     aws lambda create-function-url-config --function-name $LAMBDA_FUNCTION_NAME --auth-type NONE --cors '{"AllowOrigins": ["*"], "AllowMethods": ["*"], "AllowHeaders": ["*"]}' --region $AWS_REGION > $null
     
     # Add resource-based policy to allow public access to the URL
