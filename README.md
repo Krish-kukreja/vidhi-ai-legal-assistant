@@ -130,30 +130,6 @@ npm run dev
 ### 4. Configure AWS
 Follow the detailed guide: [`docs/COMPLETE_AWS_SETUP_GUIDE.md`](docs/COMPLETE_AWS_SETUP_GUIDE.md)
 
-##  Live Demo
-
-- **Frontend**: http://localhost:5173
-- **Backend API**: http://localhost:8000
-- **API Docs**: http://localhost:8000/docs
-
-##  Cost Estimate
-
-### Development
-- **S3**: $0.50/month
-- **DynamoDB**: $1/month  
-- **Bedrock**: $2/month
-- **Total**: ~$5/month
-
-### Production (1000 users/day)
-- **S3**: $15/month
-- **DynamoDB**: $30/month
-- **Bedrock**: $80/month
-- **Polly**: $20/month
-- **Transcribe**: $10/month
-- **Total**: ~$155/month
-
-*Optimized from original $300/month estimate*
-
 ##  Development
 
 ### Backend Development
