@@ -1,0 +1,30 @@
+=== VIDHI AWS FULL CLOUD SETUP GUIDE ===
+
+Once you have added a payment method to your AWS account, follow these steps to unlock all features:
+
+STEP 1: PERMISSIONS (IAM)
+Go to the IAM user (vidhi_backend) and attach these 3 policies:
+- AmazonBedrockFullAccess
+- AmazonS3FullAccess
+- AmazonDynamoDBFullAccess
+
+STEP 2: ENABLE BEDROCK MODELS (AI)
+- Go to the Amazon Bedrock console.
+- Click "Model access" on the bottom left.
+- Click "Manage model access" on the top right.
+- Check the boxes for "Anthropic: Claude 3 Haiku" and "Amazon: Titan Embeddings G1 - Text".
+- Click "Request model access" at the bottom.
+
+STEP 3: CLOUD STORAGE & DATABASES
+- S3: Create 2 new buckets (e.g., vidhi-documents-2024, vidhi-audio-2024).
+- DynamoDB: Create exactly 4 tables with the partition key name set to 'id' (type String):
+    1. vidhi-users
+    2. vidhi-chat-history
+    3. vidhi-response-cache
+    4. vidhi-embedding-cache
+
+STEP 4: UPDATE BACKEND SECRETS
+- Paste the exact names of your two new S3 buckets into your `vidhi-backend/.env` file.
+- Restart the Python `app.py` server.
+
+You're done! Everything will strictly run on AWS.

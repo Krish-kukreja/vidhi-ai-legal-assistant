@@ -7,7 +7,7 @@ import { User, Phone, CreditCard, Calendar, MessageSquare, Clock, Shield } from 
 
 interface UserData {
   name: string;
-  authMethod: "guest" | "aadhaar" | "phone";
+  authMethod: "guest" | "aadhaar" | "phone" | "professional";
   identifier?: string;
   joinedDate: string;
   totalChats: number;

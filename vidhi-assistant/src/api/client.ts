@@ -478,3 +478,44 @@ export async function getSupportedLanguagesDetailed(): Promise<any> {
   const result = await response.json();
   return result.data;
 }
+
+// ============================================================================
+// DOCUMENT DRAFTING API
+// ============================================================================
+
+export interface DocumentDraftingRequest {
+  document_type: string;
+  parties: string;
+  key_terms: string;
+}
+
+export interface DocumentDraftingResponse {
+  success: boolean;
+  markdown_draft: string;
+  download_url: string;
+  template_used: string;
+}
+
+/**
+ * Draft a legal document based on templates and user input
+ */
+export async function draftDocument(
+  request: DocumentDraftingRequest
+): Promise<DocumentDraftingResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/documents/draft`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || `API error: ${response.statusText}`);
+  }
+
+  const result = await response.json();
+  return result.data;
+}
+

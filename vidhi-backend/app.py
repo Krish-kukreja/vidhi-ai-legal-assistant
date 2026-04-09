@@ -27,11 +27,6 @@ logger = logging.getLogger(__name__)
 # Import configurations
 from configs import config
 
-# Set up logging FIRST (before any imports that might use it)
-logging.basicConfig(
-    level=logging.INFO,  # Default level, will be updated from config later
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
 logger = logging.getLogger(__name__)
 
 # Try to import optional services - gracefully handle missing dependencies
@@ -104,7 +99,6 @@ except ImportError as e:
     CHAT_HISTORY_AVAILABLE = False
     chat_history_service = None
 
-# Initialize FastAPI app
 app = FastAPI(
     title="VIDHI API",
     description="Voice-Integrated Defense for Holistic Inclusion - AI Legal Assistant",
@@ -173,12 +167,12 @@ transcribe_service = None
 polly_service = None
 bhashini_service = None
 
-# Pydantic models
 class ChatRequest(BaseModel):
     text: Optional[str] = None
     language: str = "hindi"
     language_code: str = "hi-IN"
     use_aws_stt: bool = False
+    session_id: str = "default"  # Unique per browser tab/conversation
 
 class ChatResponse(BaseModel):
     response: str
@@ -340,7 +334,8 @@ async def chat(
     files: List[UploadFile] = File(default=[]),
     language: str = Form("hindi"),
     language_code: str = Form("hi-IN"),
-    use_aws_stt: bool = Form(False)
+    use_aws_stt: bool = Form(False),
+    session_id: str = Form("default"),  # Unique per browser tab/conversation
 ):
     """
     Main chat endpoint for VIDHI.
@@ -349,7 +344,6 @@ async def chat(
     try:
         user_input = None
         
-        # Handle file input (voice or document)
         if files and len(files) > 0:
             extracted_texts = []
             audio_processed = False
@@ -497,10 +491,10 @@ async def chat(
         if not llm_service or llm_service.error:
             raise HTTPException(status_code=503, detail="LLM service not available")
         
-        logger.info(f"Querying LLM: {user_input[:50]}...")
+        logger.info(f"Querying LLM [session={session_id}]: {user_input[:50]}...")
         llm_start_time = time.time()
         
-        ai_response = llm_service.query(user_input, language)
+        ai_response = llm_service.query(user_input, session_id=session_id, language=language)
         
         logger.info(f"LLM completed in {time.time() - llm_start_time:.2f} seconds")
 
@@ -522,6 +516,17 @@ async def chat(
         logger.error(f"Error in chat endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.post("/clear-session")
+async def clear_session(session_id: str):
+    """
+    Clear conversation memory for a given session.
+    Call this when the user clicks 'New Conversation'.
+    """
+    if llm_service:
+        llm_service.clear_session(session_id)
+        return {"status": "cleared", "session_id": session_id}
+    return {"status": "no_service", "session_id": session_id}
 
 @app.post("/emergency")
 async def emergency(request: EmergencyRequest):
@@ -877,3 +882,192 @@ async def get_supported_languages():
             ]
         }
     })
+
+# ============================================================================
+# AUTHENTICATION & USER STATE ENDPOINTS
+# ============================================================================
+
+class UserRegisterRequest(BaseModel):
+    email: str
+    password: str
+    name: str
+
+class UserLoginRequest(BaseModel):
+    email: str
+    password: str
+
+try:
+    from services.authentication import register_user, login_user
+except ImportError as e:
+    logger.warning(f"Auth service not available: {e}")
+    register_user = None
+    login_user = None
+
+@app.post("/api/v1/auth/register")
+async def register(request: UserRegisterRequest):
+    """Register a new user to access professional workspaces"""
+    if not register_user:
+        raise HTTPException(status_code=503, detail="Auth service not available")
+    result = register_user(request.email, request.password, request.name)
+    if result.get("success"):
+        return JSONResponse(content={"status": "success", "data": result})
+    else:
+        raise HTTPException(status_code=400, detail=result.get("error"))
+
+@app.post("/api/v1/auth/login")
+async def login(request: UserLoginRequest):
+    """Login and receive a JWT token"""
+    if not login_user:
+        raise HTTPException(status_code=503, detail="Auth service not available")
+    result = login_user(request.email, request.password)
+    if result.get("success"):
+        return JSONResponse(content={"status": "success", "data": result})
+    else:
+        raise HTTPException(status_code=401, detail=result.get("error"))
+
+# ============================================================================
+# MATTER WORKSPACE ENDPOINTS
+# ============================================================================
+
+from fastapi import Header
+
+class MatterCreateRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+try:
+    from services.database import get_db
+    from services.authentication import verify_token
+except ImportError:
+    get_db = None
+    verify_token = None
+
+def get_current_user(authorization: str = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    token = authorization.split(" ")[1]
+    if verify_token:
+        payload = verify_token(token)
+        if not payload:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+        return payload
+    return {"sub": 0} # Mock if service disabled
+
+@app.get("/api/v1/matters")
+async def list_matters(user=Depends(get_current_user)):
+    """List all matters for the currently authenticated user"""
+    if not get_db:
+         return JSONResponse(content={"status": "success", "data": []})
+    with get_db() as db:
+        matters = db.execute(
+            "SELECT id, name, description, created_at FROM matters WHERE user_id = ?",
+            (user['sub'],)
+        ).fetchall()
+        return JSONResponse(content={"status": "success", "data": [dict(m) for m in matters]})
+
+@app.post("/api/v1/matters")
+async def create_matter(request: MatterCreateRequest, user=Depends(get_current_user)):
+    """Create a new segregated matter workspace"""
+    if not get_db:
+         return JSONResponse(content={"status": "success", "matter_id": 1})
+    with get_db() as db:
+        cursor = db.execute(
+            "INSERT INTO matters (user_id, name, description) VALUES (?, ?, ?)",
+            (user['sub'], request.name, request.description)
+        )
+        db.commit()
+        return JSONResponse(content={"status": "success", "matter_id": cursor.lastrowid})
+
+# ============================================================================
+# DOCUMENT DRAFTING ENDPOINTS
+# ============================================================================
+
+class DocumentDraftingRequest(BaseModel):
+    document_type: str
+    parties: str
+    key_terms: str
+
+try:
+    from services.document_drafting import document_drafting_service
+except ImportError as e:
+    logger.warning(f"Drafting service not available: {e}")
+    document_drafting_service = None
+
+@app.post("/api/v1/documents/draft")
+async def draft_document(request: DocumentDraftingRequest):
+    """Generate a custom legal document draft"""
+    if not document_drafting_service:
+        raise HTTPException(status_code=503, detail="Drafting service not available")
+    
+    result = document_drafting_service.generate_draft(
+        document_type=request.document_type,
+        parties=request.parties,
+        key_terms=request.key_terms
+    )
+    if result.get("success"):
+        return JSONResponse(content={"status": "success", "data": result})
+    else:
+        raise HTTPException(status_code=500, detail=result.get("error"))
+
+# ============================================================================
+# LIVE RESEARCH ENDPOINTS
+# ============================================================================
+
+class CaseLawResearchRequest(BaseModel):
+    query: str
+
+try:
+    from services.live_research import live_research_service
+except ImportError as e:
+    logger.warning(f"Live research service not available: {e}")
+    live_research_service = None
+
+@app.post("/api/v1/research/case-law")
+async def research_case_law(request: CaseLawResearchRequest):
+    """Search for live case law context using DuckDuckGo directly."""
+    if not live_research_service:
+        raise HTTPException(status_code=503, detail="Live research service not available")
+        
+    result = live_research_service.search_case_law(query=request.query)
+    
+    if result.get("success"):
+        return JSONResponse(content={"status": "success", "data": result})
+    else:
+        raise HTTPException(status_code=500, detail=result.get("error"))@app.get("/api/v1/documents/download/{filename}")
+async def download_draft(filename: str):
+    """Download the generated docx file"""
+    import os
+    file_path = os.path.join(os.path.dirname(__file__), "storage", "drafts", filename)
+    if os.path.exists(file_path):
+        return FileResponse(file_path, filename=filename, media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+    raise HTTPException(status_code=404, detail="File not found")
+
+# ============================================================================
+# CONTRACT REVIEW & REDLINING ENDPOINTS
+# ============================================================================
+
+class ContractReviewRequest(BaseModel):
+    document_text: str
+    playbook_rules: Optional[str] = None
+
+try:
+    from services.contract_review import contract_review_service
+except ImportError as e:
+    logger.warning(f"Contract review service not available: {e}")
+    contract_review_service = None
+
+@app.post("/api/v1/contracts/review")
+async def review_contract(request: ContractReviewRequest):
+    """Analyze a contract and provide structural redlines and risk assessment."""
+    if not contract_review_service:
+        raise HTTPException(status_code=503, detail="Contract review service not available")
+        
+    result = contract_review_service.analyze_contract(
+        contract_text=request.document_text,
+        playbook_rules=request.playbook_rules
+    )
+    
+    if result.get("success"):
+        return JSONResponse(content={"status": "success", "data": result["data"]})
+    else:
+        raise HTTPException(status_code=500, detail=result.get("error"))

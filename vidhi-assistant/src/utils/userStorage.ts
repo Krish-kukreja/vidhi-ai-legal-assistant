@@ -2,7 +2,7 @@
 
 export interface UserData {
   name: string;
-  authMethod: "guest" | "aadhaar" | "phone";
+  authMethod: "guest" | "aadhaar" | "phone" | "professional";
   identifier?: string;
   joinedDate: string;
   totalChats: number;

@@ -39,11 +39,33 @@ const ChatSidebar = ({ isOpen, onClose, onNewChat, onSelectChat, activeChatId }:
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
 
-  const loadData = () => {
+  const loadData = async () => {
     setUserData(getUserData());
     setDisplayName(getDisplayName());
     setUserInitials(getUserInitials());
     setChatHistory(getChatHistory());
+
+    // Check if professional backend token exists
+    const token = localStorage.getItem("vidhi_token");
+    if (token) {
+      try {
+        const res = await fetch("http://localhost:8000/api/v1/matters", {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          // Map backend format to local ChatFolder format
+          const mappedFolders = data.data.map((m: any) => ({
+            id: m.id.toString(),
+            name: m.name
+          }));
+          setFolders(mappedFolders);
+          return;
+        }
+      } catch (err) {
+        console.error("Failed to fetch workspaces", err);
+      }
+    }
     setFolders(getFolders());
   };
 
@@ -67,9 +89,28 @@ const ChatSidebar = ({ isOpen, onClose, onNewChat, onSelectChat, activeChatId }:
 
 
 
-  const handleCreateFolder = () => {
+  const handleCreateFolder = async () => {
     if (newFolderName.trim()) {
-      createFolder(newFolderName.trim());
+      const token = localStorage.getItem("vidhi_token");
+      if (token) {
+        try {
+          // Use professional workspace API
+          await fetch("http://localhost:8000/api/v1/matters", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${token}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ name: newFolderName.trim(), description: "Created via Sidebar" })
+          });
+        } catch (e) {
+          console.error("Failed to create workspace", e);
+        }
+      } else {
+        // Fallback local storage
+        createFolder(newFolderName.trim());
+      }
+
       setNewFolderName("");
       setIsFolderDialogOpen(false);
       loadData();
@@ -110,23 +151,23 @@ const ChatSidebar = ({ isOpen, onClose, onNewChat, onSelectChat, activeChatId }:
         <div className="fixed inset-0 z-30 bg-foreground/30 lg:hidden" onClick={onClose} />
       )}
       <motion.aside
-        className={`fixed lg:static z-40 top-0 left-0 h-full w-72 bg-sidebar flex flex-col border-r border-sidebar-border transition-transform lg:translate-x-0 ${isOpen ? "translate-x-0" : "-translate-x-full"}`}
+        className={`fixed lg:static z-40 top-0 left-0 h-full w-72 bg-sidebar border-0 border-r border-border/40 flex flex-col transition-transform lg:translate-x-0 ${isOpen ? "translate-x-0" : "-translate-x-full"}`}
         initial={false}
       >
-        <div className="p-4 border-b border-sidebar-border flex gap-2">
+        <div className="p-4 flex gap-2 items-center mt-2">
           <button
             onClick={onNewChat}
-            className="flex-1 flex items-center justify-center gap-2 bg-sidebar-primary text-sidebar-primary-foreground rounded-xl py-3 font-semibold hover:opacity-90 transition-opacity"
+            className="flex-1 flex items-center gap-2 bg-secondary text-secondary-foreground rounded-full py-2.5 px-4 text-sm font-medium hover:bg-secondary/80 transition-colors shadow-sm"
           >
-            <Plus className="h-5 w-5" />
-            New Chat
+            <Plus className="h-4 w-4" />
+            New chat
           </button>
           <button
             onClick={() => setIsFolderDialogOpen(true)}
-            className="w-12 flex items-center justify-center bg-sidebar-accent text-sidebar-foreground rounded-xl hover:bg-sidebar-accent/80 transition-colors"
+            className="w-10 h-10 flex items-center justify-center bg-transparent text-sidebar-foreground rounded-full hover:bg-sidebar-accent transition-colors"
             title="New Folder"
           >
-            <FolderPlus className="h-5 w-5" />
+            <FolderPlus className="h-4 w-4" />
           </button>
         </div>
 
@@ -201,19 +242,17 @@ const ChatSidebar = ({ isOpen, onClose, onNewChat, onSelectChat, activeChatId }:
 
         </div>
 
-        <div className="p-4 border-t border-sidebar-border">
+        <div className="p-4 mb-2">
           <button
             onClick={() => setProfileOpen(true)}
-            className="w-full flex items-center gap-3 hover:bg-sidebar-accent rounded-lg p-2 -m-2 transition-colors group"
+            className="w-full flex items-center gap-3 hover:bg-sidebar-accent rounded-full p-2 transition-colors group"
           >
-            <div className="w-9 h-9 rounded-full bg-sidebar-primary flex items-center justify-center text-sidebar-primary-foreground font-bold text-sm flex-shrink-0">
+            <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-xs flex-shrink-0">
               {userInitials}
             </div>
             <div className="flex-1 min-w-0 text-left">
               <p className="text-sm font-medium text-sidebar-foreground truncate">{displayName}</p>
-              <p className="text-xs text-sidebar-muted truncate">{getSubtitle()}</p>
             </div>
-            <ChevronRight className="h-4 w-4 text-sidebar-muted group-hover:text-sidebar-foreground transition-colors flex-shrink-0" />
           </button>
         </div>
       </motion.aside>
@@ -222,7 +261,7 @@ const ChatSidebar = ({ isOpen, onClose, onNewChat, onSelectChat, activeChatId }:
       <Dialog open={isFolderDialogOpen} onOpenChange={setIsFolderDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create New Folder</DialogTitle>
+            <DialogTitle>Create New {userData?.authMethod === 'professional' ? 'Matter Workspace' : 'Folder'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">

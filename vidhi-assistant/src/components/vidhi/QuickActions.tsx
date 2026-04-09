@@ -1,4 +1,4 @@
-import { Scale, Landmark, FileSearch } from "lucide-react";
+import { Scale, Landmark, FileSearch, PenTool } from "lucide-react";
 import { motion } from "framer-motion";
 
 const actions = [
@@ -20,6 +20,12 @@ const actions = [
     desc: "Contract & legal analysis",
     gradient: "from-accent to-accent/80",
   },
+  {
+    icon: PenTool,
+    label: "Draft Legal Document",
+    desc: "Generate custom legal drafts",
+    gradient: "from-blue-500 to-blue-500/80",
+  },
 ];
 
 interface QuickActionsProps {
@@ -28,21 +34,18 @@ interface QuickActionsProps {
 
 const QuickActions = ({ onAction }: QuickActionsProps) => {
   return (
-    <div className="grid grid-cols-3 gap-3 px-4 py-3">
+    <div className="flex flex-wrap justify-start gap-3 px-4 max-w-3xl mx-auto mb-4">
       {actions.map((action, i) => (
         <motion.button
           key={action.label}
           onClick={() => onAction(action.label)}
-          className={`flex flex-col items-center gap-2 rounded-2xl bg-gradient-to-br ${action.gradient} p-4 text-primary-foreground shadow-lg hover:shadow-xl transition-shadow`}
-          initial={{ opacity: 0, y: 20 }}
+          className="flex items-center gap-3 rounded-2xl bg-muted/50 hover:bg-muted p-4 pr-6 transition-colors border border-transparent hover:border-border cursor-pointer min-w-[160px]"
+          initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: i * 0.1 }}
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.97 }}
+          transition={{ duration: 0.3, delay: i * 0.05 }}
         >
-          <action.icon className="h-7 w-7" />
-          <span className="text-xs sm:text-sm font-semibold text-center leading-tight">{action.label}</span>
-          <span className="text-[10px] sm:text-xs opacity-80 text-center hidden sm:block">{action.desc}</span>
+          <action.icon className="h-5 w-5 text-muted-foreground" />
+          <span className="text-sm font-medium text-foreground text-left">{action.label}</span>
         </motion.button>
       ))}
     </div>

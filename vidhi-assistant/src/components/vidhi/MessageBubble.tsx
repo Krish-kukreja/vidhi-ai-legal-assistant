@@ -33,7 +33,7 @@ const MessageBubble = ({ message }: MessageBubbleProps) => {
       return;
     }
 
-    const utterance = new SpeechSynthesisUtterance(message.text.replace(/[⚖️🏛️📄🙏🎤]/g, ""));
+    const utterance = new SpeechSynthesisUtterance(message.text.replace(/[]/g, ""));
     utteranceRef.current = utterance;
 
     // Use BCP 47 language tag from configuration
@@ -57,17 +57,17 @@ const MessageBubble = ({ message }: MessageBubbleProps) => {
 
         {!isUser && (
           <div className="flex-shrink-0 mr-4 mt-1">
-            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-              <Sparkles className="h-4 w-4 text-primary" />
+            <div className="w-10 h-10 rounded-full glass-panel flex items-center justify-center bg-gradient-to-br from-primary/10 to-transparent">
+              <Sparkles className="h-5 w-5 text-primary drop-shadow-[0_0_8px_rgba(0,0,0,0.1)]" />
             </div>
           </div>
         )}
 
         <div className="flex flex-col w-full">
           <div
-            className={`px-4 py-3 ${isUser
-              ? "bg-chat-user text-chat-user-foreground rounded-3xl rounded-tr-md inline-block whitespace-pre-wrap text-[15px]"
-              : "bg-chat-ai text-chat-ai-foreground max-w-none text-[15px] leading-relaxed"
+            className={`px-5 py-3.5 ${isUser
+              ? "bg-muted text-foreground rounded-[24px] rounded-tr-[4px] inline-block whitespace-pre-wrap text-[15px]"
+              : "bg-transparent text-foreground rounded-[24px] rounded-tl-[4px] max-w-none text-[15px] leading-relaxed"
               }`}
           >
             {!isUser ? (

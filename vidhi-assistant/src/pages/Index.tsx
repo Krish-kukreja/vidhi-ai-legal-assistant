@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from "react";
+import { Scale } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import TopBar from "@/components/vidhi/TopBar";
 import ChatSidebar from "@/components/vidhi/ChatSidebar";
 import QuickActions from "@/components/vidhi/QuickActions";
@@ -6,6 +8,8 @@ import ChatInput from "@/components/vidhi/ChatInput";
 import MessageBubble, { Message } from "@/components/vidhi/MessageBubble";
 import TypingIndicator from "@/components/vidhi/TypingIndicator";
 import SOSModal from "@/components/vidhi/SOSModal";
+import DocumentDraftingModal from "@/components/vidhi/DocumentDraftingModal";
+import ContractReviewModal from "@/components/vidhi/ContractReviewModal";
 import { updateLastActive, saveChatToHistory, getDisplayName, getChatHistory, updateChatDetails } from "@/utils/userStorage";
 import { sendQuery } from "@/api/client";
 import { INDIAN_LANGUAGES } from "@/config/languages";
@@ -14,6 +18,8 @@ import { toast } from "@/hooks/use-toast";
 const Index = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sosOpen, setSOSOpen] = useState(false);
+  const [draftingOpen, setDraftingOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [chatStarted, setChatStarted] = useState(false);
@@ -75,6 +81,18 @@ const Index = () => {
     setIsTyping(false);
   };
 
+  const handleQuickAction = (text: string) => {
+    if (text === "Draft Legal Document") {
+      setDraftingOpen(true);
+      return;
+    }
+    if (text === "Scan a Document") {
+      setReviewOpen(true);
+      return;
+    }
+    sendMessage(text);
+  };
+
   const sendMessage = async (text: string, language?: string, files?: File[]) => {
     if (isTyping) return; // Don't allow new messages while processing
     const langKey = language || "hindi";
@@ -87,7 +105,7 @@ const Index = () => {
 
     const userMsg: Message = {
       id: Date.now().toString(),
-      text: files && files.length > 0 && !text ? (files.length === 1 && files[0].type.startsWith('audio/') ? "🎵 Voice message" : `📄 ${files.length} Document(s) attached`) : text || "📄 Document attached",
+      text: files && files.length > 0 && !text ? (files.length === 1 && files[0].type.startsWith('audio/') ? " Voice message" : ` ${files.length} Document(s) attached`) : text || " Document attached",
       sender: "user",
       language: langKey,
       timestamp: new Date(),
@@ -159,7 +177,7 @@ const Index = () => {
         // User cancelled — just show a small note, no error
         setMessages((prev) => [...prev, {
           id: (Date.now() + 1).toString(),
-          text: "⚡ Response cancelled.",
+          text: " Response cancelled.",
           sender: "ai",
           language: "english",
           timestamp: new Date(),
@@ -180,7 +198,7 @@ const Index = () => {
         id: (Date.now() + 1).toString(),
         text: errMsg.includes("fetch") || errMsg.includes("Failed")
           ? "Sorry, I am having trouble connecting to my AI backend. Please ensure the backend server is running on port 8000."
-          : `⚠️ ${errMsg}`,
+          : ` ${errMsg}`,
         sender: "ai",
         language: "english",
         timestamp: new Date(),
@@ -203,21 +221,27 @@ const Index = () => {
         activeChatId={activeChatId}
       />
 
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 z-10 bg-background overflow-hidden relative">
         <TopBar onMenuClick={() => setSidebarOpen(true)} onSOSClick={() => setSOSOpen(true)} />
 
         <div ref={scrollRef} className="flex-1 overflow-y-auto w-full flex flex-col items-center">
           {messages.length === 0 ? (
-            <div className="flex-1 w-full max-w-4xl px-4 flex flex-col items-center justify-center min-h-[50vh]">
-              <div className="w-full text-left md:mb-12 mb-6 mt-16">
-                <h1 className="text-5xl md:text-6xl font-bold tracking-tight mb-2 text-transparent bg-clip-text bg-gradient-to-r from-primary/80 to-primary/40">
-                  Hello, {userName}
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6 }}
+              className="flex-1 w-full max-w-3xl px-4 flex flex-col justify-center min-h-[40vh]"
+            >
+              <div className="w-full text-left md:mb-16 mb-8 mt-4">
+                <h1 className="flex items-center text-4xl md:text-5xl font-medium tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-primary to-primary/40 mb-2 leading-tight">
+                  <Scale className="w-8 h-8 md:w-10 md:h-10 mr-3 text-primary/70 flex-shrink-0" strokeWidth={2.5} />
+                  Hi {userName}
                 </h1>
-                <p className="text-3xl md:text-4xl font-medium text-muted-foreground/60 w-full animate-pulse-slow">
-                  How can I help you today?
+                <p className="text-3xl md:text-4xl font-medium text-muted-foreground w-full tracking-tight leading-tight opacity-70">
+                  Where should we start?
                 </p>
               </div>
-            </div>
+            </motion.div>
           ) : (
             <div className="w-full max-w-4xl px-4 py-8 space-y-4">
               {messages.map((msg) => (
@@ -228,10 +252,10 @@ const Index = () => {
           )}
         </div>
 
-        <div className="w-full max-w-4xl mx-auto px-4 pb-4">
+        <div className="w-full max-w-3xl mx-auto px-4 pb-4">
           {messages.length === 0 && (
-            <div className="mb-4">
-              <QuickActions onAction={sendMessage} />
+            <div className="mb-8">
+              <QuickActions onAction={handleQuickAction} />
             </div>
           )}
           <ChatInput onSend={sendMessage} isLoading={isTyping} onStop={handleStopGeneration} />
@@ -243,6 +267,8 @@ const Index = () => {
       </div>
 
       <SOSModal isOpen={sosOpen} onClose={() => setSOSOpen(false)} />
+      <DocumentDraftingModal isOpen={draftingOpen} onClose={() => setDraftingOpen(false)} />
+      <ContractReviewModal isOpen={reviewOpen} onClose={() => setReviewOpen(false)} />
     </div>
   );
 };

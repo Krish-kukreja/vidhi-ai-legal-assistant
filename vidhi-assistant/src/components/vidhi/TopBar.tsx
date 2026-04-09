@@ -31,24 +31,18 @@ const TopBar = ({ onMenuClick, onSOSClick }: TopBarProps) => {
   };
 
   return (
-    <header className="sticky top-0 z-20 bg-card/80 backdrop-blur-xl border-b border-border">
+    <header className="sticky top-0 z-20 bg-background">
       <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-3">
           <button
             onClick={onMenuClick}
-            className="lg:hidden p-2 rounded-xl hover:bg-muted transition-colors"
+            className="p-2 rounded-full hover:bg-muted transition-colors text-foreground"
             aria-label="Open menu"
           >
-            <Menu className="h-5 w-5 text-foreground" />
+            <Menu className="h-5 w-5" />
           </button>
           <div className="flex items-center gap-2">
-            <div className="w-10 h-10 flex items-center justify-center">
-              <img src="/logo.png" alt="Vidhi Logo" className="w-full h-full object-contain" />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold text-foreground leading-none">VIDHI</h1>
-              <p className="text-[10px] text-muted-foreground font-medium">Voice-Integrated Legal Aid</p>
-            </div>
+            <h1 className="text-xl font-medium text-foreground hidden sm:block tracking-tight text-primary">VIDHI</h1>
           </div>
         </div>
 
@@ -85,17 +79,14 @@ const TopBar = ({ onMenuClick, onSOSClick }: TopBarProps) => {
             )}
           </button>
 
-          <motion.button
+          <button
             onClick={onSOSClick}
-            className="flex items-center gap-2 bg-sos text-sos-foreground px-4 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-sos/30 hover:shadow-sos/50 transition-shadow"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
+            className="flex items-center gap-2 border border-destructive/50 text-destructive px-3 py-1.5 rounded-full text-sm font-medium hover:bg-destructive/10 transition-colors ml-2"
             aria-label="Emergency SOS"
           >
-            <ShieldAlert className="h-5 w-5" />
+            <ShieldAlert className="h-4 w-4" />
             <span className="hidden sm:inline">SOS</span>
-            <span className="sm:hidden">SOS</span>
-          </motion.button>
+          </button>
         </div>
       </div>
     </header>

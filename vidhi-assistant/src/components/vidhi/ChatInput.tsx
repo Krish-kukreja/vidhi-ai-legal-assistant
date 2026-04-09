@@ -179,7 +179,7 @@ const ChatInput = ({ onSend, isLoading = false, onStop }: ChatInputProps) => {
       // Give the user explicit instructions on how to fix the permission issue
       toast({
         title: "Microphone Access Denied",
-        description: "Please click the lock icon 🔒 in your browser's address bar, find 'Microphone', and change it to 'Allow'. Then refresh the page.",
+        description: "Please click the lock icon  in your browser's address bar, find 'Microphone', and change it to 'Allow'. Then refresh the page.",
         variant: "destructive",
         duration: 8000,
       });
@@ -378,7 +378,7 @@ const ChatInput = ({ onSend, isLoading = false, onStop }: ChatInputProps) => {
         )}
       </AnimatePresence>
 
-      <div className="w-full bg-muted rounded-[24px] flex flex-col pt-2 pb-2 px-2 transition-all border border-transparent focus-within:border-border/50 shadow-sm relative">
+      <div className="w-full max-w-3xl mx-auto bg-muted/40 rounded-[28px] flex flex-col pt-2 pb-2 px-3 transition-shadow focus-within:shadow-md border border-border">
 
         {/* Top Controls Row inside the Input Box */}
         <div className="flex items-center justify-between px-2 pb-1">
@@ -476,9 +476,9 @@ const ChatInput = ({ onSend, isLoading = false, onStop }: ChatInputProps) => {
             value={text}
             onChange={handleInput}
             onKeyDown={handleKeyDown}
-            placeholder={isLoading ? "Vidhi is thinking..." : `Ask a legal question...`}
+            placeholder={isLoading ? "Vidhi is thinking..." : `Ask Vidhi`}
             disabled={isLoading}
-            className={`flex-1 bg-transparent py-3 mb-0.5 text-[15px] resize-none outline-none text-foreground placeholder:text-muted-foreground/70 max-h-[120px] min-h-[44px] transition-opacity ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            className={`flex-1 bg-transparent py-3 mb-0.5 text-[16px] resize-none outline-none text-foreground placeholder:text-muted-foreground max-h-[120px] min-h-[44px] transition-opacity ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
             rows={1}
             style={{ paddingLeft: '8px' }}
           />
@@ -511,9 +511,9 @@ const ChatInput = ({ onSend, isLoading = false, onStop }: ChatInputProps) => {
           ) : (
             <motion.button
               onClick={toggleRecording}
-              className={`p-2 rounded-full h-10 w-10 flex items-center justify-center shrink-0 mb-0.5 transition-colors ${isRecording
-                ? "bg-sos text-sos-foreground animate-pulse"
-                : "bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-foreground"
+              className={`p-2 rounded-[20px] h-11 w-11 flex items-center justify-center shrink-0 mb-0.5 transition-all ${isRecording
+                ? "bg-sos/20 text-sos animate-pulse border border-sos/50"
+                : "bg-primary/5 text-foreground hover:bg-primary/10"
                 }`}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}

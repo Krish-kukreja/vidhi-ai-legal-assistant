@@ -26,6 +26,11 @@ const Login = () => {
   const [phoneOtp, setPhoneOtp] = useState("");
   const [phoneOtpSent, setPhoneOtpSent] = useState(false);
 
+  // Professional / Email login
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isRegistering, setIsRegistering] = useState(false);
+
   const handleGuestLogin = () => {
     // Get or create a unique guest ID so each guest session is isolated
     let guestId = localStorage.getItem("vidhi_guest_id");
@@ -214,8 +219,50 @@ const Login = () => {
       title: "Digilocker Integration",
       description: "Redirecting to Digilocker... (Feature coming soon)",
     });
-    // In production, redirect to Digilocker OAuth
-    // window.location.href = 'https://digilocker.gov.in/oauth/authorize?...'
+  };
+
+  const handleProfessionalAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      toast({ title: "Error", description: "Email and password are required", variant: "destructive" });
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const endpoint = isRegistering ? '/api/v1/auth/register' : '/api/v1/auth/login';
+      const body = isRegistering ? { email, password, name: "Counsel" } : { email, password };
+
+      const res = await fetch(`http://localhost:8000${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Authentication failed");
+
+      if (data.status === "success") {
+        localStorage.setItem("vidhi_token", data.data.token);
+        localStorage.setItem("vidhi_auth", "professional_" + data.data.user_id);
+
+        const userData: UserData = {
+          name: data.data.name || "Legal Counsel",
+          authMethod: "professional",
+          joinedDate: new Date().toLocaleDateString("en-IN"),
+          totalChats: 0,
+          lastActive: "Just now",
+        };
+        saveUserData(userData);
+
+        toast({ title: "Success", description: "Welcome to VIDHI Pro Workspaces" });
+        navigate("/");
+      }
+    } catch (err: any) {
+      toast({ title: "Authentication Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -233,10 +280,11 @@ const Login = () => {
 
         <CardContent>
           <Tabs defaultValue="guest" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="guest">Guest</TabsTrigger>
               <TabsTrigger value="aadhaar">Aadhaar</TabsTrigger>
               <TabsTrigger value="phone">Phone</TabsTrigger>
+              <TabsTrigger value="pro">Pro</TabsTrigger>
             </TabsList>
 
             {/* Guest Mode */}
@@ -432,11 +480,46 @@ const Login = () => {
                 )}
               </div>
             </TabsContent>
+
+            {/* Professional Authentication */}
+            <TabsContent value="pro" className="space-y-4">
+              <form onSubmit={handleProfessionalAuth} className="space-y-4 py-4">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
+                  <Shield className="h-4 w-4" />
+                  <span>Secure login for Legal Professionals</span>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email" type="email" placeholder="counsel@lawfirm.com"
+                    value={email} onChange={(e) => setEmail(e.target.value)} required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password</Label>
+                  <Input
+                    id="password" type="password" placeholder="••••••••"
+                    value={password} onChange={(e) => setPassword(e.target.value)} required
+                  />
+                </div>
+                <Button type="submit" disabled={isLoading} className="w-full">
+                  {isLoading ? "Authenticating..." : (isRegistering ? "Register Workspace" : "Login to Workspaces")}
+                </Button>
+                <div className="text-center text-sm">
+                  <span className="text-muted-foreground">
+                    {isRegistering ? "Already have an account?" : "Need a Pro account?"}
+                  </span>
+                  <button type="button" onClick={() => setIsRegistering(!isRegistering)} className="ml-2 font-medium underline text-primary">
+                    {isRegistering ? "Login" : "Sign Up"}
+                  </button>
+                </div>
+              </form>
+            </TabsContent>
           </Tabs>
 
           <div className="mt-6 text-center text-xs text-muted-foreground">
             <p>By continuing, you agree to VIDHI's Terms of Service and Privacy Policy</p>
-            <p className="mt-2">🔒 Your data is encrypted and secure</p>
+            <p className="mt-2"> Your data is encrypted and secure</p>
           </div>
         </CardContent>
       </Card>

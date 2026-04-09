@@ -1,0 +1,3 @@
+# VIDHI Data Pipeline Dependencies
+datasets>=2.0.0
+huggingface-hub>=0.20.0
