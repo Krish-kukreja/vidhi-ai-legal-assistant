@@ -303,25 +303,25 @@ python app.py  # Will recreate on startup
 
 ```
 vidhi-backend/
-├── app.py                      # Main FastAPI application
-├── requirements.txt            # Python dependencies
-├── .env.example               # Environment variables template
-├── scraper.py                 # Government scheme scraper
-├── myschemes_scraped.json     # Scraped schemes data
-├── configs/
-│   └── config.py              # AWS configuration
-├── llm_setup/
-│   └── bedrock_setup.py       # AWS Bedrock LLM
-├── speech/
-│   ├── aws_transcribe.py      # AWS Transcribe (STT)
-│   ├── aws_polly.py           # AWS Polly (TTS)
-│   └── bhashini.py            # Bhashini API (dialects)
-├── processing/
-│   └── documents.py           # Document processing
-├── stores/
-│   └── chroma.py              # ChromaDB vector store
-└── utils/
-    └── aws_helpers.py         # AWS utility functions
+├ app.py                      # Main FastAPI application
+├ requirements.txt            # Python dependencies
+├ .env.example               # Environment variables template
+├ scraper.py                 # Government scheme scraper
+├ myschemes_scraped.json     # Scraped schemes data
+├ configs/
+    config.py              # AWS configuration
+├ llm_setup/
+    bedrock_setup.py       # AWS Bedrock LLM
+├ speech/
+   ├ aws_transcribe.py      # AWS Transcribe (STT)
+   ├ aws_polly.py           # AWS Polly (TTS)
+    bhashini.py            # Bhashini API (dialects)
+├ processing/
+    documents.py           # Document processing
+├ stores/
+    chroma.py              # ChromaDB vector store
+ utils/
+     aws_helpers.py         # AWS utility functions
 ```
 
 ## Contributing
