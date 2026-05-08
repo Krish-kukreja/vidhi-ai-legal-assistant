@@ -43,6 +43,14 @@ vidhi-backend/output.json
 vidhi-backend/response.json
 
 # ─────────────────────────────────────────────
+# Databases — NEVER COMMIT LIVE DATA
+# ─────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+vidhi-backend/storage/
+
+# ─────────────────────────────────────────────
 # Node / Frontend
 # ─────────────────────────────────────────────
 node_modules/
