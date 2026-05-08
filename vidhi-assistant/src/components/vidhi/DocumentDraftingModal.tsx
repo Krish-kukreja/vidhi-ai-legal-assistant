@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, FileText, Loader2, Download, CheckCircle2 } from "lucide-react";
+import { X, FileText, Download, CheckCircle2 } from "lucide-react";
 import { draftDocument } from "@/api/client";
 import { toast } from "@/hooks/use-toast";
 import ReactMarkdown from "react-markdown";
+import { ProgressIndicator } from "@/components/ui/progress-indicator";
+import { TimeoutWarning } from "@/components/ui/timeout-warning";
 
 interface DocumentDraftingModalProps {
     isOpen: boolean;
@@ -135,17 +137,25 @@ const DocumentDraftingModal = ({ isOpen, onClose }: DocumentDraftingModalProps) 
 
                         {step === "loading" && (
                             <div className="h-full min-h-[400px] flex flex-col items-center justify-center space-y-6">
-                                <div className="w-20 h-20 relative">
-                                    <div className="absolute inset-0 border-4 border-primary/20 rounded-full"></div>
-                                    <div className="absolute inset-0 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-                                    <FileText className="absolute inset-0 m-auto w-8 h-8 text-primary animate-pulse" />
-                                </div>
-                                <div className="text-center space-y-2">
-                                    <h3 className="text-lg font-medium">Retrieving Templates & Drafting...</h3>
-                                    <p className="text-muted-foreground max-w-sm">
-                                        VIDHI is retrieving the standard {docType || "document"} template and mapping your requirements using Bedrock ML models.
-                                    </p>
-                                </div>
+                                <ProgressIndicator
+                                    message="Retrieving Templates & Drafting..."
+                                    variant="default"
+                                />
+                                <p className="text-muted-foreground max-w-sm text-center text-sm">
+                                    VIDHI is retrieving the standard {docType || "document"} template and mapping your requirements using Bedrock ML models.
+                                </p>
+                                <TimeoutWarning
+                                    isLoading={true}
+                                    warningThreshold={15000}
+                                    criticalThreshold={45000}
+                                    onTimeout={() => {
+                                        toast({
+                                            title: "Document generation is taking longer than expected",
+                                            description: "Complex documents may take up to a minute. Please wait...",
+                                            variant: "default"
+                                        });
+                                    }}
+                                />
                             </div>
                         )}
 

@@ -157,6 +157,122 @@ def create_retriever(
         raise
 
 
+def create_hybrid_retriever(
+    vectorstore: Chroma,
+    bm25_weight: float = 0.5,
+    semantic_weight: float = 0.5,
+    top_k: int = 50,
+    reranking_enabled: bool = True,
+    reranking_top_k: int = 10,
+    confidence_threshold: float = 0.0
+):
+    """
+    Create a hybrid retriever combining BM25 and semantic search.
+    
+    Args:
+        vectorstore: Chroma vectorstore
+        bm25_weight: Weight for BM25 scores (0-1)
+        semantic_weight: Weight for semantic scores (0-1)
+        top_k: Number of candidates from hybrid search
+        reranking_enabled: Enable cross-encoder reranking
+        reranking_top_k: Number of results after reranking
+        confidence_threshold: Minimum confidence for reranking
+    
+    Returns:
+        HybridRetriever instance (with optional reranking)
+    """
+    try:
+        from stores.bm25_retriever import create_bm25_retriever
+        from stores.hybrid_retriever import create_hybrid_retriever as create_hybrid
+        from stores.reranker import create_reranker
+        
+        # Get all documents from vectorstore
+        logger.info("Building BM25 index from vectorstore...")
+        all_docs = vectorstore.get()
+        
+        # Convert to LangChain Document format
+        documents = [
+            Document(
+                page_content=all_docs['documents'][i],
+                metadata=all_docs['metadatas'][i] if all_docs['metadatas'] else {}
+            )
+            for i in range(len(all_docs['documents']))
+        ]
+        
+        logger.info(f"Building hybrid retriever with {len(documents)} documents")
+        
+        # Create BM25 retriever
+        bm25_retriever = create_bm25_retriever(documents)
+        
+        # Create semantic retriever
+        semantic_retriever = vectorstore.as_retriever(
+            search_kwargs={"k": top_k}
+        )
+        
+        # Create hybrid retriever
+        hybrid_retriever = create_hybrid(
+            bm25_retriever=bm25_retriever,
+            semantic_retriever=semantic_retriever,
+            bm25_weight=bm25_weight,
+            semantic_weight=semantic_weight,
+            top_k=top_k
+        )
+        
+        # Wrap with reranker if enabled
+        if reranking_enabled:
+            logger.info("Enabling cross-encoder reranking")
+            reranker = create_reranker(
+                confidence_threshold=confidence_threshold,
+                cache_enabled=True
+            )
+            
+            # Create wrapper that combines hybrid retrieval + reranking
+            class HybridRetrieverWithReranking:
+                def __init__(self, hybrid_ret, rerank):
+                    self.hybrid_retriever = hybrid_ret
+                    self.reranker = rerank
+                    self.reranking_top_k = reranking_top_k
+                
+                def get_relevant_documents(self, query: str) -> List[Document]:
+                    # Get hybrid results
+                    hybrid_results = self.hybrid_retriever.get_relevant_documents_with_scores(query)
+                    
+                    # Rerank
+                    reranked = self.reranker.rerank_with_metadata(
+                        query,
+                        hybrid_results,
+                        top_k=self.reranking_top_k
+                    )
+                    
+                    return [r["document"] for r in reranked]
+                
+                def get_relevant_documents_with_scores(self, query: str) -> List[dict]:
+                    # Get hybrid results
+                    hybrid_results = self.hybrid_retriever.get_relevant_documents_with_scores(query)
+                    
+                    # Rerank
+                    reranked = self.reranker.rerank_with_metadata(
+                        query,
+                        hybrid_results,
+                        top_k=self.reranking_top_k
+                    )
+                    
+                    return reranked
+            
+            retriever = HybridRetrieverWithReranking(hybrid_retriever, reranker)
+            logger.info(f"Created hybrid retriever with reranking (top_k={reranking_top_k})")
+        else:
+            retriever = hybrid_retriever
+            logger.info(f"Created hybrid retriever without reranking (top_k={top_k})")
+        
+        return retriever
+        
+    except Exception as e:
+        logger.error(f"Error creating hybrid retriever: {e}")
+        logger.warning("Falling back to standard semantic retriever")
+        return create_retriever(vectorstore)
+
+
 class CachedEmbeddingStore:
     """
     Wrapper around Chroma that caches embeddings in DynamoDB for cost optimization.

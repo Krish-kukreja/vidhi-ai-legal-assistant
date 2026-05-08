@@ -1,4 +1,4 @@
-import { Menu, ShieldAlert, Scale, User, LogOut } from "lucide-react";
+import { ShieldAlert, Scale, User, LogOut } from "lucide-react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
@@ -34,15 +34,9 @@ const TopBar = ({ onMenuClick, onSOSClick }: TopBarProps) => {
     <header className="sticky top-0 z-20 bg-background">
       <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-3">
-          <button
-            onClick={onMenuClick}
-            className="p-2 rounded-full hover:bg-muted transition-colors text-foreground"
-            aria-label="Open menu"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-medium text-foreground hidden sm:block tracking-tight text-primary">VIDHI</h1>
+            <Scale className="h-6 w-6 text-primary" />
+            <h1 className="text-xl font-medium text-foreground tracking-tight text-primary">VIDHI</h1>
           </div>
         </div>
 

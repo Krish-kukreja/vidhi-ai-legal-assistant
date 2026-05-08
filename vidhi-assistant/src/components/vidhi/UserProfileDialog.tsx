@@ -150,27 +150,24 @@ const UserProfileDialog = ({ isOpen, onClose, userData, chatHistory }: UserProfi
               </h4>
 
               {chatHistory.length > 0 ? (
-                <ScrollArea className="max-h-72 pr-2">
-                  <div className="space-y-2">
-                    {chatHistory.map((chat) => (
-                      <div
-                        key={chat.id}
-                        className="p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors cursor-pointer"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{chat.title}</p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {chat.messageCount} messages • {chat.date}
-                            </p>
-                          </div>
-                          <MessageSquare className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                <div className="space-y-2 h-[300px] overflow-y-scroll pr-2" style={{ overflowY: 'scroll' }}>
+                  {chatHistory.map((chat) => (
+                    <div
+                      key={chat.id}
+                      className="p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors cursor-pointer"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{chat.title}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {chat.messageCount} messages • {chat.date}
+                          </p>
                         </div>
+                        <MessageSquare className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                       </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-
+                    </div>
+                  ))}
+                </div>
               ) : (
                 <div className="text-center py-6">
                   <MessageSquare className="h-8 w-8 mx-auto text-muted-foreground mb-2" />

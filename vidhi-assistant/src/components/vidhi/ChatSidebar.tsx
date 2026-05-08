@@ -13,6 +13,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SkeletonLoader } from "@/components/ui/skeleton-loader";
 
 interface ChatSidebarProps {
   isOpen: boolean;
@@ -29,6 +30,7 @@ const ChatSidebar = ({ isOpen, onClose, onNewChat, onSelectChat, activeChatId }:
   const [folders, setFolders] = useState<ChatFolder[]>([]);
   const [displayName, setDisplayName] = useState("VIDHI User");
   const [userInitials, setUserInitials] = useState("V");
+  const [isLoading, setIsLoading] = useState(true);
 
   // Dialog states
   const [isFolderDialogOpen, setIsFolderDialogOpen] = useState(false);
@@ -40,6 +42,7 @@ const ChatSidebar = ({ isOpen, onClose, onNewChat, onSelectChat, activeChatId }:
   const [editDescription, setEditDescription] = useState("");
 
   const loadData = async () => {
+    setIsLoading(true);
     setUserData(getUserData());
     setDisplayName(getDisplayName());
     setUserInitials(getUserInitials());
@@ -60,6 +63,7 @@ const ChatSidebar = ({ isOpen, onClose, onNewChat, onSelectChat, activeChatId }:
             name: m.name
           }));
           setFolders(mappedFolders);
+          setIsLoading(false);
           return;
         }
       } catch (err) {
@@ -67,6 +71,7 @@ const ChatSidebar = ({ isOpen, onClose, onNewChat, onSelectChat, activeChatId }:
       }
     }
     setFolders(getFolders());
+    setIsLoading(false);
   };
 
   useEffect(() => {
@@ -173,33 +178,65 @@ const ChatSidebar = ({ isOpen, onClose, onNewChat, onSelectChat, activeChatId }:
 
         <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-4">
 
-          {/* FOLDERS */}
-          {folders.map((folder) => {
-            const folderChats = chatHistory.filter((c) => c.folderId === folder.id);
-            return (
-              <div key={folder.id} className="flex flex-col gap-1">
-                <div className="flex items-center justify-between px-2 py-1">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-sidebar-foreground">
-                    <Folder className="h-3.5 w-3.5" />
-                    {folder.name}
+          {isLoading ? (
+            <div className="px-2">
+              <SkeletonLoader variant="list" count={5} />
+            </div>
+          ) : (
+            <>
+              {/* FOLDERS */}
+              {folders.map((folder) => {
+                const folderChats = chatHistory.filter((c) => c.folderId === folder.id);
+                return (
+                  <div key={folder.id} className="flex flex-col gap-1">
+                    <div className="flex items-center justify-between px-2 py-1">
+                      <div className="flex items-center gap-2 text-xs font-semibold text-sidebar-foreground">
+                        <Folder className="h-3.5 w-3.5" />
+                        {folder.name}
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button className="p-1 rounded hover:bg-sidebar-accent">
+                            <MoreVertical className="h-3.5 w-3.5 text-sidebar-muted" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent>
+                          <DropdownMenuItem className="text-destructive" onClick={() => { deleteFolder(folder.id); loadData(); }}>
+                            <Trash2 className="h-4 w-4 mr-2" /> Delete Folder
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                    {folderChats.length === 0 ? (
+                      <div className="px-4 py-2 text-xs text-sidebar-muted italic">Empty</div>
+                    ) : (
+                      folderChats.map((chat) => (
+                        <ChatItem
+                          key={chat.id}
+                          chat={chat}
+                          folders={folders}
+                          isActive={activeChatId === chat.id}
+                          onSelect={() => onSelectChat && onSelectChat(chat.id)}
+                          onEdit={() => { setEditingChat(chat); setEditTitle(chat.title); setEditDescription(chat.description || ""); setIsEditDialogOpen(true); }}
+                          onMove={(fId) => moveToFolder(chat.id, fId)}
+                          onDelete={() => { deleteChat(chat.id); loadData(); }}
+                        />
+                      ))
+                    )}
                   </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button className="p-1 rounded hover:bg-sidebar-accent">
-                        <MoreVertical className="h-3.5 w-3.5 text-sidebar-muted" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                      <DropdownMenuItem className="text-destructive" onClick={() => { deleteFolder(folder.id); loadData(); }}>
-                        <Trash2 className="h-4 w-4 mr-2" /> Delete Folder
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-                {folderChats.length === 0 ? (
-                  <div className="px-4 py-2 text-xs text-sidebar-muted italic">Empty</div>
+                );
+              })}
+
+              {/* RECENT UNASSIGNED */}
+              <div className="flex flex-col gap-1">
+                <div className="px-2 py-1.5 text-xs font-semibold text-sidebar-muted">Recent</div>
+                {unassignedChats.length === 0 && folders.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center mt-6">
+                    <MessageSquare className="h-8 w-8 text-sidebar-muted mb-3" />
+                    <p className="text-sm text-sidebar-muted text-center">No chat history</p>
+                  </div>
                 ) : (
-                  folderChats.map((chat) => (
+                  unassignedChats.map((chat) => (
                     <ChatItem
                       key={chat.id}
                       chat={chat}
@@ -213,32 +250,8 @@ const ChatSidebar = ({ isOpen, onClose, onNewChat, onSelectChat, activeChatId }:
                   ))
                 )}
               </div>
-            );
-          })}
-
-          {/* RECENT UNASSIGNED */}
-          <div className="flex flex-col gap-1">
-            <div className="px-2 py-1.5 text-xs font-semibold text-sidebar-muted">Recent</div>
-            {unassignedChats.length === 0 && folders.length === 0 ? (
-              <div className="flex flex-col items-center justify-center mt-6">
-                <MessageSquare className="h-8 w-8 text-sidebar-muted mb-3" />
-                <p className="text-sm text-sidebar-muted text-center">No chat history</p>
-              </div>
-            ) : (
-              unassignedChats.map((chat) => (
-                <ChatItem
-                  key={chat.id}
-                  chat={chat}
-                  folders={folders}
-                  isActive={activeChatId === chat.id}
-                  onSelect={() => onSelectChat && onSelectChat(chat.id)}
-                  onEdit={() => { setEditingChat(chat); setEditTitle(chat.title); setEditDescription(chat.description || ""); setIsEditDialogOpen(true); }}
-                  onMove={(fId) => moveToFolder(chat.id, fId)}
-                  onDelete={() => { deleteChat(chat.id); loadData(); }}
-                />
-              ))
-            )}
-          </div>
+            </>
+          )}
 
         </div>
 

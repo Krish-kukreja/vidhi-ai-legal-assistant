@@ -10,8 +10,10 @@ import TypingIndicator from "@/components/vidhi/TypingIndicator";
 import SOSModal from "@/components/vidhi/SOSModal";
 import DocumentDraftingModal from "@/components/vidhi/DocumentDraftingModal";
 import ContractReviewModal from "@/components/vidhi/ContractReviewModal";
+import { TimeoutWarning } from "@/components/ui/timeout-warning";
 import { updateLastActive, saveChatToHistory, getDisplayName, getChatHistory, updateChatDetails } from "@/utils/userStorage";
 import { sendQuery } from "@/api/client";
+import { streamChat, StreamEvent } from "@/api/apiClient";
 import { INDIAN_LANGUAGES } from "@/config/languages";
 import { toast } from "@/hooks/use-toast";
 
@@ -24,6 +26,7 @@ const Index = () => {
   const [isTyping, setIsTyping] = useState(false);
   const [chatStarted, setChatStarted] = useState(false);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [streamingEnabled, setStreamingEnabled] = useState(true); // Feature flag for streaming
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -105,7 +108,7 @@ const Index = () => {
 
     const userMsg: Message = {
       id: Date.now().toString(),
-      text: files && files.length > 0 && !text ? (files.length === 1 && files[0].type.startsWith('audio/') ? " Voice message" : ` ${files.length} Document(s) attached`) : text || " Document attached",
+      text: files && files.length > 0 && !text ? (files.length === 1 && files[0].type.startsWith('audio/') ? "🎤 Voice message" : `📄 ${files.length} Document(s) attached`) : text || "📄 Document attached",
       sender: "user",
       language: langKey,
       timestamp: new Date(),
@@ -127,49 +130,164 @@ const Index = () => {
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
-      const response = await sendQuery({
-        text: text,
-        language: languageConfig.name,
-        language_code: languageConfig.bcp47,
-        use_aws_stt: files && files.length > 0 && files[0].type.startsWith('audio/'),
-        files: files
-      }, controller.signal);
+      // Check if we should use streaming (only for text queries, not file uploads)
+      const shouldStream = streamingEnabled && (!files || files.length === 0);
 
+      if (shouldStream) {
+        // ============================================================================
+        // STREAMING PATH (Phase 2)
+        // ============================================================================
+        
+        // Create a placeholder message for the AI response
+        const aiMsgId = (Date.now() + 1).toString();
+        const aiMsg: Message = {
+          id: aiMsgId,
+          text: "",
+          sender: "ai",
+          language: langKey,
+          timestamp: new Date(),
+        };
 
-      const aiMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        text: response.response,
-        sender: "ai",
-        language: langKey,
-        timestamp: new Date(),
-        audioUrl: response.audio_url
-      };
+        setMessages((prev) => [...prev, aiMsg]);
 
-      setMessages((prev) => {
-        const newMessages = [...prev, aiMsg];
+        let fullResponse = "";
+        let metadata: { confidence?: number; citations?: string[] } = {};
 
-        // Save to chat history after the first complete exchange (1 user msg + 1 ai msg)
-        // If it's a new chat, create it. If it exists, update it.
-        if (newMessages.length === 2 && !activeChatId) {
-          const firstUserMessage = newMessages.find(m => m.sender === "user");
-          if (firstUserMessage) {
-            const newChat = saveChatToHistory(firstUserMessage.text, newMessages);
-            setActiveChatId(newChat.id);
+        try {
+          // Stream tokens from backend
+          for await (const event of streamChat(
+            text,
+            activeChatId || "default",
+            languageConfig.name,
+            controller.signal
+          )) {
+            if (event.type === 'token' && event.content) {
+              // Append token to response
+              fullResponse += event.content;
+              
+              // Update message in real-time
+              setMessages((prev) => 
+                prev.map((msg) => 
+                  msg.id === aiMsgId 
+                    ? { ...msg, text: fullResponse }
+                    : msg
+                )
+              );
+            } else if (event.type === 'metadata') {
+              // Store metadata for later
+              metadata = {
+                confidence: event.confidence,
+                citations: event.citations
+              };
+            } else if (event.type === 'done') {
+              // Streaming complete
+              console.log(`Streaming complete: ${event.total_tokens} tokens in ${event.duration_ms}ms`);
+            } else if (event.type === 'error') {
+              // Error during streaming
+              throw new Error(event.message || 'Streaming error');
+            }
           }
-        } else if (activeChatId) {
-          updateChatDetails(activeChatId, {
-            messageCount: newMessages.length,
-            messages: newMessages
+
+          // Update final message with metadata
+          setMessages((prev) => {
+            const newMessages = prev.map((msg) => 
+              msg.id === aiMsgId 
+                ? { 
+                    ...msg, 
+                    text: fullResponse,
+                    metadata 
+                  }
+                : msg
+            );
+
+            // Save to chat history
+            if (newMessages.length === 2 && !activeChatId) {
+              const firstUserMessage = newMessages.find(m => m.sender === "user");
+              if (firstUserMessage) {
+                const newChat = saveChatToHistory(firstUserMessage.text, newMessages);
+                setActiveChatId(newChat.id);
+              }
+            } else if (activeChatId) {
+              updateChatDetails(activeChatId, {
+                messageCount: newMessages.length,
+                messages: newMessages
+              });
+            }
+
+            return newMessages;
           });
+
+        } catch (streamError: any) {
+          if (streamError?.name === 'AbortError' || streamError?.message === 'Request cancelled') {
+            // User cancelled — show cancellation message
+            setMessages((prev) => 
+              prev.map((msg) => 
+                msg.id === aiMsgId 
+                  ? { ...msg, text: "⚠️ Response cancelled." }
+                  : msg
+              )
+            );
+            return;
+          }
+          
+          // Streaming failed - fall back to regular request
+          console.warn('Streaming failed, falling back to regular request:', streamError);
+          
+          // Remove placeholder message
+          setMessages((prev) => prev.filter((msg) => msg.id !== aiMsgId));
+          
+          // Fall through to regular request below
+          throw streamError;
         }
 
-        return newMessages;
-      });
+      } else {
+        // ============================================================================
+        // REGULAR REQUEST PATH (for file uploads or when streaming disabled)
+        // ============================================================================
+        
+        const response = await sendQuery({
+          text: text,
+          language: languageConfig.name,
+          language_code: languageConfig.bcp47,
+          use_aws_stt: files && files.length > 0 && files[0].type.startsWith('audio/'),
+          files: files
+        }, controller.signal);
 
-      // If there's an audio URL from AWS Polly, play it!
-      if (response.audio_url) {
-        const audio = new Audio(response.audio_url);
-        audio.play().catch(e => console.error("Could not auto-play audio", e));
+        const aiMsg: Message = {
+          id: (Date.now() + 1).toString(),
+          text: response.response,
+          sender: "ai",
+          language: langKey,
+          timestamp: new Date(),
+          audioUrl: response.audio_url
+        };
+
+        setMessages((prev) => {
+          const newMessages = [...prev, aiMsg];
+
+          // Save to chat history after the first complete exchange (1 user msg + 1 ai msg)
+          // If it's a new chat, create it. If it exists, update it.
+          if (newMessages.length === 2 && !activeChatId) {
+            const firstUserMessage = newMessages.find(m => m.sender === "user");
+            if (firstUserMessage) {
+              const newChat = saveChatToHistory(firstUserMessage.text, newMessages);
+              setActiveChatId(newChat.id);
+            }
+          } else if (activeChatId) {
+            updateChatDetails(activeChatId, {
+              messageCount: newMessages.length,
+              messages: newMessages
+            });
+          }
+
+          return newMessages;
+        });
+
+        // If there's an audio URL from AWS Polly, play it!
+        if (response.audio_url) {
+          const audio = new Audio(response.audio_url);
+          audio.play().catch(e => console.error("Could not auto-play audio", e));
+        }
       }
 
     } catch (error: any) {
@@ -177,7 +295,7 @@ const Index = () => {
         // User cancelled — just show a small note, no error
         setMessages((prev) => [...prev, {
           id: (Date.now() + 1).toString(),
-          text: " Response cancelled.",
+          text: "⚠️ Response cancelled.",
           sender: "ai",
           language: "english",
           timestamp: new Date(),
@@ -198,7 +316,7 @@ const Index = () => {
         id: (Date.now() + 1).toString(),
         text: errMsg.includes("fetch") || errMsg.includes("Failed")
           ? "Sorry, I am having trouble connecting to my AI backend. Please ensure the backend server is running on port 8000."
-          : ` ${errMsg}`,
+          : `❌ ${errMsg}`,
         sender: "ai",
         language: "english",
         timestamp: new Date(),
@@ -247,7 +365,23 @@ const Index = () => {
               {messages.map((msg) => (
                 <MessageBubble key={msg.id} message={msg} />
               ))}
-              {isTyping && <TypingIndicator />}
+              {isTyping && (
+                <>
+                  <TypingIndicator />
+                  <TimeoutWarning
+                    isLoading={isTyping}
+                    warningThreshold={10000}
+                    criticalThreshold={30000}
+                    onTimeout={() => {
+                      toast({
+                        title: "Taking longer than expected",
+                        description: "The backend might be processing a complex query. You can wait or stop the request.",
+                        variant: "default"
+                      });
+                    }}
+                  />
+                </>
+              )}
             </div>
           )}
         </div>

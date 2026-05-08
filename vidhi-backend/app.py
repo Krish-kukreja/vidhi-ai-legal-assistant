@@ -17,17 +17,45 @@ from typing import Optional, List
 
 os.environ["USER_AGENT"] = "Vidhi-Backend-App/1.0"
 
-# Set up logging early so service imports can use logger in their except blocks
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+# Set up structured logging
+from utils.logging_config import setup_logging
+setup_logging(
+    log_level=os.getenv("LOG_LEVEL", "INFO"),
+    json_format=os.getenv("LOG_FORMAT", "json") == "json"
 )
 logger = logging.getLogger(__name__)
+
+# Import monitoring service (optional)
+try:
+    from utils.monitoring import monitoring
+    MONITORING_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Monitoring not available: {e}")
+    MONITORING_AVAILABLE = False
+    monitoring = None
+
+# Import cache utilities
+from utils.cache import (
+    get_cached_llm_response,
+    cache_llm_response,
+    cleanup_all_caches
+)
+
+# Import scheduler utilities (optional)
+try:
+    from utils.scheduler import start_scheduler, stop_scheduler
+    SCHEDULER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Scheduler not available: {e}")
+    SCHEDULER_AVAILABLE = False
+    start_scheduler = None
+    stop_scheduler = None
 
 # Import configurations
 from configs import config
 
-logger = logging.getLogger(__name__)
+# Import input sanitization utilities
+from utils.input_sanitization import sanitize_api_input, check_content_safety
 
 # Try to import optional services - gracefully handle missing dependencies
 try:
@@ -121,6 +149,27 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
+# Add error handling middleware (first, to catch all errors)
+from middleware.error_handler_middleware import ErrorHandlerMiddleware
+app.add_middleware(ErrorHandlerMiddleware)
+
+# Add request logging middleware
+from middleware.request_logging_middleware import RequestLoggingMiddleware
+app.add_middleware(RequestLoggingMiddleware)
+
+# Add input sanitization middleware
+from middleware.sanitization_middleware import InputSanitizationMiddleware
+app.add_middleware(InputSanitizationMiddleware)
+
+# Add authentication middleware
+from middleware.auth_middleware import AuthMiddleware
+app.add_middleware(AuthMiddleware)
+
+# Add rate limiting middleware
+from middleware.rate_limit_middleware import RateLimitMiddleware
+app.add_middleware(RateLimitMiddleware)
+
+
 # Update log level from config (overrides the early INFO default)
 logging.getLogger().setLevel(getattr(logging, config.LOG_LEVEL))
 
@@ -195,6 +244,26 @@ async def startup_event():
     logger.info("Starting VIDHI backend...")
     logger.info(f"Available services: Bedrock={BEDROCK_AVAILABLE}, Chroma={CHROMA_AVAILABLE}, Transcribe={TRANSCRIBE_AVAILABLE}, Polly={POLLY_AVAILABLE}")
     
+    # Initialize monitoring (Sentry)
+    if MONITORING_AVAILABLE and monitoring:
+        try:
+            monitoring.initialize()
+            logger.info("Monitoring initialized")
+        except Exception as e:
+            logger.warning(f"Failed to initialize monitoring: {e}")
+    else:
+        logger.info("Monitoring not available (install sentry-sdk to enable)")
+    
+    # Start data refresh scheduler
+    if SCHEDULER_AVAILABLE and start_scheduler:
+        try:
+            start_scheduler()
+            logger.info("Data refresh scheduler started")
+        except Exception as e:
+            logger.warning(f"Failed to start scheduler: {e}")
+    else:
+        logger.info("Scheduler not available (install APScheduler to enable)")
+    
     try:
         # Initialize embeddings (only if Chroma is available)
         if CHROMA_AVAILABLE:
@@ -230,7 +299,7 @@ async def startup_event():
                 else:
                     if not os.path.exists(config.SCHEMES_JSON_PATH):
                         logger.warning(f"Schemes file not found: {config.SCHEMES_JSON_PATH}")
-                        logger.warning("Run scraper.py to download government schemes data")
+                        logger.warning("Run data_pipeline/fetch_schemes.py to download government schemes data")
                     if not DOCUMENT_PROCESSING_AVAILABLE:
                         logger.warning("Document processing not available")
         else:
@@ -250,6 +319,22 @@ async def startup_event():
                 logger.error(f"LLM service initialization error: {llm_service.error}")
             else:
                 logger.info("LLM service initialized successfully")
+                
+                # Set LLM service for streaming routes (Phase 2)
+                try:
+                    from routes.streaming_routes import set_llm_service
+                    set_llm_service(llm_service)
+                    logger.info("LLM service set for streaming routes")
+                except ImportError:
+                    logger.debug("Streaming routes not available yet")
+                
+                # Set services for WebSocket routes (Phase 2 Week 2)
+                if set_services and transcribe_service and polly_service:
+                    try:
+                        set_services(llm_service, transcribe_service, polly_service)
+                        logger.info("Services set for WebSocket routes")
+                    except Exception as e:
+                        logger.warning(f"Failed to set WebSocket services: {e}")
         else:
             logger.warning("Skipping LLM service - Bedrock not available")
         
@@ -272,8 +357,17 @@ async def startup_event():
             if POLLY_AVAILABLE:
                 polly_service = AWSPollyService(region=config.AWS_REGION)
                 
-                # Wrap Polly with caching
-                polly_service = CachedPollyService(polly_service, config.S3_BUCKET_AUDIO)
+                # Initialize CDN service for audio delivery
+                try:
+                    from services.cdn_service import CDNService
+                    cdn_service = CDNService(region=config.AWS_REGION)
+                    logger.info(f"CDN service initialized (enabled: {cdn_service.is_enabled()})")
+                except Exception as e:
+                    logger.warning(f"CDN service initialization failed: {e}")
+                    cdn_service = None
+                
+                # Wrap Polly with caching and CDN
+                polly_service = CachedPollyService(polly_service, config.S3_BUCKET_AUDIO, cdn_service)
             else:
                 logger.warning("AWS Polly not available")
             
@@ -296,6 +390,89 @@ async def startup_event():
 
     except Exception as e:
         logger.error(f"Error during startup: {e}", exc_info=True)
+        # Capture startup errors in monitoring
+        if MONITORING_AVAILABLE and monitoring:
+            try:
+                monitoring.capture_exception(e, context={"phase": "startup"})
+            except:
+                pass
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown"""
+    logger.info("Shutting down VIDHI backend...")
+    
+    # Stop scheduler
+    if SCHEDULER_AVAILABLE and stop_scheduler:
+        try:
+            stop_scheduler()
+            logger.info("Scheduler stopped")
+        except Exception as e:
+            logger.warning(f"Error stopping scheduler: {e}")
+    
+    # Cleanup caches
+    try:
+        cleanup_all_caches()
+        logger.info("Caches cleaned up")
+    except Exception as e:
+        logger.warning(f"Error cleaning up caches: {e}")
+    
+    logger.info("VIDHI backend shutdown complete")
+
+
+# Include authentication routes
+from routes.auth_routes import router as auth_router
+app.include_router(auth_router)
+
+# Include cache management routes
+try:
+    from routes.cache_routes import router as cache_router
+    app.include_router(cache_router)
+    logger.info("Cache routes registered")
+except ImportError as e:
+    logger.warning(f"Cache routes not available: {e}")
+
+# Include scheduler routes
+try:
+    from routes.scheduler_routes import router as scheduler_router
+    app.include_router(scheduler_router)
+    logger.info("Scheduler routes registered")
+except ImportError as e:
+    logger.warning(f"Scheduler routes not available: {e}")
+
+# Include streaming routes (Phase 2)
+try:
+    from routes.streaming_routes import router as streaming_router
+    app.include_router(streaming_router)
+    logger.info("Streaming routes registered")
+except ImportError as e:
+    logger.warning(f"Streaming routes not available: {e}")
+
+# Include WebSocket routes (Phase 2 Week 2)
+try:
+    from routes.websocket_routes import router as websocket_router, set_services
+    app.include_router(websocket_router)
+    logger.info("WebSocket routes registered")
+except ImportError as e:
+    logger.warning(f"WebSocket routes not available: {e}")
+    set_services = None
+
+# Include task management routes (Phase 3)
+try:
+    from routes.task_routes import router as task_router
+    app.include_router(task_router)
+    logger.info("Task management routes registered")
+except ImportError as e:
+    logger.warning(f"Task routes not available: {e}")
+
+# Include CDN management routes (Phase 3)
+try:
+    from routes.cdn_routes import router as cdn_router
+    app.include_router(cdn_router)
+    logger.info("CDN management routes registered")
+except ImportError as e:
+    logger.warning(f"CDN routes not available: {e}")
 
 
 @app.get("/")
@@ -342,6 +519,30 @@ async def chat(
     Supports text and voice input.
     """
     try:
+        # Sanitize all inputs first
+        sanitized = sanitize_api_input(
+            text=text,
+            session_id=session_id,
+            language=language_code.split('-')[0] if language_code else None
+        )
+        
+        # Check content safety
+        if not sanitized.get('is_safe', True):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid input: {sanitized.get('safety_reason', 'Content safety check failed')}"
+            )
+        
+        # Use sanitized values
+        text = sanitized.get('text', text)
+        session_id = sanitized.get('session_id', session_id)
+        
+        # Sanitize filenames
+        for file in files:
+            if hasattr(file, 'filename') and file.filename:
+                from utils.input_sanitization import sanitize_filename
+                file.filename = sanitize_filename(file.filename)
+        
         user_input = None
         
         if files and len(files) > 0:
@@ -494,7 +695,21 @@ async def chat(
         logger.info(f"Querying LLM [session={session_id}]: {user_input[:50]}...")
         llm_start_time = time.time()
         
-        ai_response = llm_service.query(user_input, session_id=session_id, language=language)
+        # Check cache first
+        cache_key = f"{session_id}:{user_input}"
+        cached_response = get_cached_llm_response(cache_key)
+        
+        if cached_response:
+            logger.info(f"Cache HIT for session {session_id}")
+            ai_response = cached_response
+            from_cache = True
+        else:
+            # Cache miss - query LLM
+            ai_response = llm_service.query(user_input, session_id=session_id, language=language)
+            
+            # Cache the response
+            cache_llm_response(cache_key, ai_response, ttl=3600)  # 1 hour TTL
+            from_cache = False
         
         logger.info(f"LLM completed in {time.time() - llm_start_time:.2f} seconds")
 
@@ -507,7 +722,7 @@ async def chat(
             response=ai_response,
             audio_url=audio_url,
             language=language,
-            from_cache=False
+            from_cache=from_cache
         )
     
     except HTTPException:

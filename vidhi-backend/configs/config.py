@@ -61,8 +61,8 @@ CHUNK_OVERLAP = 200
 
 # Scraper Configuration
 START_WEB_SCRAPING = os.getenv("START_WEB_SCRAPING", "False").lower() == "true"
-SCHEMES_JSON_PATH = "myschemes_scraped.json"
-SCHEMES_S3_KEY = "schemes/myschemes_scraped.json"
+SCHEMES_JSON_PATH = "data_pipeline/raw/myschemes_full.json"  # Updated to new scraper output
+SCHEMES_S3_KEY = "schemes/myschemes_full.json"
 
 # Cache Configuration
 RESPONSE_CACHE_TTL_HOURS = 24

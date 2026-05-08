@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  # Backend Service
+  backend:
+    build:
+      context: ./vidhi-backend
+      dockerfile: Dockerfile
+    container_name: vidhi-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change-me-in-production}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - AWS_REGION=${AWS_REGION:-ap-south-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+    volumes:
+      - ./vidhi-backend/chroma_db:/app/chroma_db
+      - ./vidhi-backend/data_pipeline/raw:/app/data_pipeline/raw
+      - ./vidhi-backend/logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend Service
+  frontend:
+    build:
+      context: ./vidhi-assistant
+      dockerfile: Dockerfile
+    container_name: vidhi-frontend
+    ports:
+      - "80:80"
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  chroma_data:
+  raw_data:
+  logs:
+
+networks:
+  default:
+    name: vidhi-network

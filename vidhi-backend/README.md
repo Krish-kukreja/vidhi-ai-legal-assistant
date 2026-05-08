@@ -118,13 +118,13 @@ aws dynamodb create-table \
 ### 6. Scrape Government Schemes (Optional)
 
 ```bash
-# Install Firefox and geckodriver for Selenium
-# Windows: Download from https://github.com/mozilla/geckodriver/releases
+# Run the data pipeline (includes scheme scraping, takes ~30 minutes)
+python data_pipeline/run_pipeline.py
 
-# Run scraper (takes ~30 minutes)
-python scraper.py
+# Or run just the schemes scraper
+python data_pipeline/fetch_schemes.py
 
-# This creates myschemes_scraped.json with 2,980+ schemes
+# This creates data_pipeline/raw/myschemes_full.json with 2,980+ schemes
 ```
 
 ### 7. Run the Server
@@ -306,18 +306,22 @@ vidhi-backend/
 ├ app.py                      # Main FastAPI application
 ├ requirements.txt            # Python dependencies
 ├ .env.example               # Environment variables template
-├ scraper.py                 # Government scheme scraper
-├ myschemes_scraped.json     # Scraped schemes data
+├ data_pipeline/             # Data scraping and ingestion
+│  ├ fetch_schemes.py        # Government scheme scraper (fixed)
+│  ├ fetch_constitution.py   # Constitution scraper
+│  ├ fetch_india_code.py     # India Code acts scraper
+│  ├ ingest_to_chroma.py     # ChromaDB ingestion
+│  └ run_pipeline.py         # Master pipeline orchestrator
 ├ configs/
-    config.py              # AWS configuration
+│  └ config.py               # AWS configuration
 ├ llm_setup/
-    bedrock_setup.py       # AWS Bedrock LLM
+│  └ bedrock_setup.py        # AWS Bedrock LLM
 ├ speech/
-   ├ aws_transcribe.py      # AWS Transcribe (STT)
-   ├ aws_polly.py           # AWS Polly (TTS)
-    bhashini.py            # Bhashini API (dialects)
+│  ├ aws_transcribe.py       # AWS Transcribe (STT)
+│  ├ aws_polly.py            # AWS Polly (TTS)
+│  └ bhashini.py             # Bhashini API (dialects)
 ├ processing/
-    documents.py           # Document processing
+│  └ documents.py            # Document processing
 ├ stores/
     chroma.py              # ChromaDB vector store
  utils/

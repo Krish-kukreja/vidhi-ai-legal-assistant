@@ -9,6 +9,7 @@ Upgraded with:
 from __future__ import annotations
 
 import logging
+import os
 from typing import Optional
 
 from langchain_aws import ChatBedrock
@@ -19,10 +20,18 @@ from langchain_core.vectorstores import VectorStoreRetriever
 from langchain_core.documents import Document
 from langchain.memory import ConversationBufferWindowMemory
 
-import sys, os
+import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from processing.documents import format_documents
 from llm_setup.crag import RelevanceGrader, Grade, IRRELEVANT_FALLBACK, PARTIAL_PREFIX
+
+# Import agent components (optional - only if agent is enabled)
+try:
+    from llm_setup.agent_tools import create_agent_tools
+    from llm_setup.agent import create_vidhi_agent
+    AGENT_AVAILABLE = True
+except ImportError:
+    AGENT_AVAILABLE = False
 
 
 #  LLM factory 
@@ -103,12 +112,15 @@ class BedrockLLMService:
         region: str = "ap-south-1",
         memory_window: int = 5,           # keep last 5 Q&A pairs in context
         enable_crag: bool = True,         # set False to disable grading (faster)
+        enable_agent: bool = False,       # set True to enable agentic workflows
+        agent_max_iterations: int = 5,    # max reasoning iterations for agent
     ):
         self._logger = logger
         self._retriever = retriever
         self.model_id = model_id
         self.region = region
         self.enable_crag = enable_crag
+        self.enable_agent = enable_agent
         self.error: Optional[str] = None
 
         # Session memory store: {session_id: ConversationBufferWindowMemory}
@@ -125,11 +137,28 @@ class BedrockLLMService:
         # Initialize CRAG grader
         self._grader = RelevanceGrader(self.llm) if enable_crag else None
 
+        # Initialize agent (optional)
+        self._agent = None
+        if enable_agent and AGENT_AVAILABLE and retriever:
+            try:
+                tools = create_agent_tools(retriever, logger)
+                self._agent = create_vidhi_agent(
+                    llm=self.llm,
+                    retriever=retriever,
+                    tools=tools,
+                    logger=logger,
+                    max_iterations=agent_max_iterations
+                )
+                self._logger.info(f"Agent initialized with max_iterations={agent_max_iterations}")
+            except Exception as e:
+                self._logger.error(f"Failed to initialize agent: {e}")
+                self.enable_agent = False
+
         # Build chains
         self._condense_chain = CONDENSE_QUESTION_PROMPT | self.llm | StrOutputParser()
         self._qa_chain = QA_PROMPT | self.llm | StrOutputParser()
 
-        self._logger.info(f"BedrockLLMService initialized — model={model_id}, CRAG={'ON' if enable_crag else 'OFF'}")
+        self._logger.info(f"BedrockLLMService initialized — model={model_id}, CRAG={'ON' if enable_crag else 'OFF'}, Agent={'ON' if enable_agent else 'OFF'}")
 
     #  Memory helpers 
 
@@ -168,23 +197,23 @@ class BedrockLLMService:
         self,
         question: str,
         session_id: str = "default",
-        language: str = "English"
+        language: str = "English",
+        use_agent: bool = None  # Override enable_agent setting
     ) -> str:
         """
-        Full CRAG + conversational RAG query.
+        Full CRAG + conversational RAG query with optional agentic workflows.
 
         Steps:
           1. Load session history
           2. Reformulate question (handles follow-ups like "what about this?")
-          3. Retrieve top-5 docs from ChromaDB
-          4. Grade docs with CRAG
-          5. Generate (or refuse) based on grade
-          6. Save to memory
+          3. Route to agent OR standard RAG based on configuration
+          4. Save to memory
 
         Args:
             question:   Raw user question
             session_id: Session identifier for memory isolation
             language:   Response language preference
+            use_agent:  Override enable_agent setting (None = use default)
 
         Returns:
             AI-generated answer string
@@ -209,7 +238,31 @@ class BedrockLLMService:
             else:
                 standalone_q_with_lang = standalone_q
 
-            #  Step 3: Retrieve 
+            #  Step 3: Route to agent or standard RAG 
+            should_use_agent = use_agent if use_agent is not None else self.enable_agent
+            
+            if should_use_agent and self._agent:
+                # Use agentic workflow
+                self._logger.info(f"Routing to agent for session {session_id}")
+                agent_response = self._agent.query(standalone_q_with_lang, language)
+                
+                # Format agent response
+                answer = agent_response["answer"]
+                
+                # Add confidence and citations if available
+                if agent_response.get("confidence", 0) > 0:
+                    confidence_text = f"\n\n**Confidence**: {agent_response['confidence']:.0%}"
+                    answer += confidence_text
+                
+                if agent_response.get("citations"):
+                    citations_text = "\n\n**Citations**: " + ", ".join(agent_response["citations"][:5])
+                    answer += citations_text
+                
+                # Save to memory
+                self._save_to_memory(session_id, question, answer)
+                return answer
+            
+            # Standard RAG flow (existing code)
             if not self._retriever:
                 # No retriever — plain LLM fallback
                 answer = self._qa_chain.invoke({
@@ -271,6 +324,220 @@ class BedrockLLMService:
         except Exception as e:
             self._logger.error(f"Error in query_with_context: {e}")
             return "I apologize, but I encountered an error."
+
+    #  Streaming query flow (Phase 2) 
+
+    async def query_stream(
+        self,
+        question: str,
+        session_id: str = "default",
+        language: str = "English",
+        use_agent: bool = None
+    ):
+        """
+        Stream LLM response token-by-token using async generator.
+        
+        This is the streaming version of query() method.
+        Yields events as they occur instead of returning complete response.
+        
+        Args:
+            question: Raw user question
+            session_id: Session identifier for memory isolation
+            language: Response language preference
+            use_agent: Override enable_agent setting (None = use default)
+        
+        Yields:
+            Dict with type (token/metadata/done/error) and content
+        """
+        try:
+            import time
+            start_time = time.time()
+            
+            #  Step 1: Get history 
+            history = self._get_history_str(session_id)
+
+            #  Step 2: Reformulate question 
+            if history and history != "No prior conversation.":
+                standalone_q = self._condense_chain.invoke({
+                    "chat_history": history,
+                    "question": question
+                })
+                self._logger.debug(f"Reformulated: '{question}' → '{standalone_q}'")
+            else:
+                standalone_q = question
+
+            # Apply language preference
+            if language and language.lower() not in ("english", "en"):
+                standalone_q_with_lang = f"{standalone_q}\n\nPlease respond in {language}."
+            else:
+                standalone_q_with_lang = standalone_q
+
+            #  Step 3: Route to agent or standard RAG 
+            should_use_agent = use_agent if use_agent is not None else self.enable_agent
+            
+            if should_use_agent and self._agent:
+                # Agent doesn't support streaming yet - fall back to regular query
+                self._logger.info(f"Agent doesn't support streaming, using regular query")
+                answer = self.query(question, session_id, language, use_agent)
+                
+                # Simulate streaming by yielding words
+                words = answer.split()
+                for i, word in enumerate(words):
+                    yield {
+                        "type": "token",
+                        "content": word + " ",
+                        "index": i
+                    }
+                
+                yield {
+                    "type": "done",
+                    "total_tokens": len(words),
+                    "duration_ms": int((time.time() - start_time) * 1000)
+                }
+                return
+            
+            # Standard RAG flow with streaming
+            if not self._retriever:
+                # No retriever — plain LLM fallback with streaming
+                prompt = self._qa_chain.first.invoke({
+                    "context": "No knowledge base available.",
+                    "question": standalone_q_with_lang
+                })
+                
+                token_count = 0
+                full_answer = ""
+                
+                async for chunk in self.llm.astream(prompt):
+                    if chunk.content:
+                        yield {
+                            "type": "token",
+                            "content": chunk.content,
+                            "index": token_count
+                        }
+                        full_answer += chunk.content
+                        token_count += 1
+                
+                # Save to memory
+                self._save_to_memory(session_id, question, full_answer)
+                
+                yield {
+                    "type": "done",
+                    "total_tokens": token_count,
+                    "duration_ms": int((time.time() - start_time) * 1000)
+                }
+                return
+
+            # Retrieve documents
+            docs = self._retriever.invoke(standalone_q)
+
+            #  Step 4: CRAG grading 
+            if self.enable_crag and self._grader:
+                grade_result = self._grader.grade(standalone_q, docs)
+
+                if grade_result.grade == Grade.IRRELEVANT:
+                    self._logger.info(f"CRAG: IRRELEVANT — returning fallback for session {session_id}")
+                    
+                    # Stream fallback message
+                    words = IRRELEVANT_FALLBACK.split()
+                    for i, word in enumerate(words):
+                        yield {
+                            "type": "token",
+                            "content": word + " ",
+                            "index": i
+                        }
+                    
+                    self._save_to_memory(session_id, question, IRRELEVANT_FALLBACK)
+                    
+                    yield {
+                        "type": "done",
+                        "total_tokens": len(words),
+                        "duration_ms": int((time.time() - start_time) * 1000)
+                    }
+                    return
+
+                prefix = PARTIAL_PREFIX if grade_result.grade == Grade.PARTIAL else ""
+            else:
+                prefix = ""
+
+            #  Step 5: Generate with streaming 
+            context = format_documents(docs)
+            
+            # Build prompt
+            prompt = self._qa_chain.first.invoke({
+                "context": context,
+                "question": standalone_q_with_lang
+            })
+            
+            # Stream from LLM
+            token_count = 0
+            full_answer = ""
+            
+            # Send prefix if any
+            if prefix:
+                yield {
+                    "type": "token",
+                    "content": prefix,
+                    "index": token_count
+                }
+                full_answer += prefix
+                token_count += 1
+            
+            # Stream tokens
+            async for chunk in self.llm.astream(prompt):
+                if chunk.content:
+                    yield {
+                        "type": "token",
+                        "content": chunk.content,
+                        "index": token_count
+                    }
+                    full_answer += chunk.content
+                    token_count += 1
+            
+            # Send metadata
+            confidence = self._calculate_confidence(docs) if docs else 0.5
+            citations = self._extract_citations(docs) if docs else []
+            
+            yield {
+                "type": "metadata",
+                "confidence": confidence,
+                "citations": citations[:5]
+            }
+            
+            #  Step 6: Save to memory 
+            final_answer = prefix + full_answer
+            self._save_to_memory(session_id, question, final_answer)
+            
+            # Send done
+            yield {
+                "type": "done",
+                "total_tokens": token_count,
+                "duration_ms": int((time.time() - start_time) * 1000)
+            }
+
+        except Exception as e:
+            self._logger.exception(f"Error in streaming query: {e}")
+            yield {
+                "type": "error",
+                "message": "I apologize, but I encountered an error. Please try again."
+            }
+
+    def _calculate_confidence(self, docs: list) -> float:
+        """Calculate confidence score based on retrieved documents."""
+        if not docs:
+            return 0.3
+        
+        # Use confidence from reranker if available
+        confidences = [doc.metadata.get("confidence", 0.7) for doc in docs[:3]]
+        return sum(confidences) / len(confidences) if confidences else 0.5
+
+    def _extract_citations(self, docs: list) -> list:
+        """Extract citations from retrieved documents."""
+        citations = []
+        for doc in docs[:5]:
+            source = doc.metadata.get("source", "")
+            if source and source not in citations:
+                citations.append(source)
+        return citations
 
     #  Backward-compat property 
 

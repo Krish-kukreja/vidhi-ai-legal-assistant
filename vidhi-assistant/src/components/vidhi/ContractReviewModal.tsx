@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { AlertTriangle, CheckCircle, FileText } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "@/hooks/use-toast";
+import { ProgressIndicator } from "@/components/ui/progress-indicator";
+import { TimeoutWarning } from "@/components/ui/timeout-warning";
 
 interface ContractReviewModalProps {
     isOpen: boolean;
@@ -77,7 +79,26 @@ const ContractReviewModal = ({ isOpen, onClose }: ContractReviewModalProps) => {
                     </div>
 
                     <ScrollArea className="flex-1 pl-2">
-                        {results ? (
+                        {isLoading ? (
+                            <div className="h-full flex flex-col items-center justify-center py-10 space-y-4">
+                                <ProgressIndicator
+                                    message="Analyzing Contract..."
+                                    variant="compact"
+                                />
+                                <TimeoutWarning
+                                    isLoading={isLoading}
+                                    warningThreshold={15000}
+                                    criticalThreshold={45000}
+                                    onTimeout={() => {
+                                        toast({
+                                            title: "Analysis taking longer than expected",
+                                            description: "Large contracts may take up to a minute to analyze.",
+                                            variant: "default"
+                                        });
+                                    }}
+                                />
+                            </div>
+                        ) : results ? (
                             <div className="space-y-4 pt-2 pr-4">
                                 {results.redlines.map((red: any, idx: number) => (
                                     <div key={idx} className={`p-4 border rounded-md border-l-4 ${red.severity === 'high' ? 'border-l-red-500 bg-red-500/10' : red.severity === 'medium' ? 'border-l-yellow-500 bg-yellow-500/10' : 'border-l-green-500 bg-green-500/10'}`}>

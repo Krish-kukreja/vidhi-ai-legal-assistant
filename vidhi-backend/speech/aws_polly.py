@@ -214,10 +214,11 @@ class CachedPollyService:
     Reduces costs by reusing audio for common responses.
     """
     
-    def __init__(self, polly_service: AWSPollyService, cache_bucket: str):
+    def __init__(self, polly_service: AWSPollyService, cache_bucket: str, cdn_service=None):
         self.polly = polly_service
         self.cache_bucket = cache_bucket
         self.s3 = boto3.client('s3', region_name=polly_service.region)
+        self.cdn_service = cdn_service
     
     def get_or_create_audio(
         self,
@@ -232,7 +233,7 @@ class CachedPollyService:
             language_code: Language code
         
         Returns:
-            Dict with audio URL
+            Dict with audio URL (CDN URL if CDN enabled)
         """
         import hashlib
         
@@ -246,6 +247,10 @@ class CachedPollyService:
             
             # Audio exists, return URL
             audio_url = f"https://{self.cache_bucket}.s3.{self.polly.region}.amazonaws.com/{cache_key}"
+            
+            # Convert to CDN URL if CDN enabled
+            if self.cdn_service:
+                audio_url = self.cdn_service.get_cdn_url(audio_url)
             
             logger.info(f"Using cached audio: {cache_key}")
             
@@ -279,6 +284,10 @@ class CachedPollyService:
             )
             
             audio_url = f"https://{self.cache_bucket}.s3.{self.polly.region}.amazonaws.com/{cache_key}"
+            
+            # Convert to CDN URL if CDN enabled
+            if self.cdn_service:
+                audio_url = self.cdn_service.get_cdn_url(audio_url)
             
             return {
                 'success': True,
