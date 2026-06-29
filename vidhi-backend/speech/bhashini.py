@@ -288,7 +288,47 @@ class BhashiniService:
     def is_supported(self, language_code: str) -> bool:
         """Check if language is supported by Bhashini"""
         return language_code in self.supported_languages
-    
+
     def get_supported_languages(self) -> Dict:
         """Get list of supported languages"""
         return self.supported_languages
+
+
+# Dialect name -> Bhashini language code
+_DIALECT_CODE_MAP = {
+    "bhojpuri": "bho",
+    "maithili": "mai",
+    "awadhi": "awa",
+}
+
+
+def synthesize_speech_bhashini(text: str, dialect: str = "bho") -> str:
+    """
+    Module-level convenience wrapper used by services/chat_history.py for
+    dialect TTS (Bhojpuri/Maithili/Awadhi) via Bhashini.
+
+    Returns a playable audio URL, or "" when Bhashini isn't configured. Bhashini
+    returns base64 audio rather than a hosted URL, so producing a real URL requires
+    persisting the bytes (e.g. to S3); until that storage hook is wired up this
+    returns "" so callers gracefully fall back to "no audio".
+    """
+    import os
+
+    try:
+        api_key = os.getenv("BHASHINI_API_KEY")
+        if not api_key:
+            return ""
+
+        service = BhashiniService(
+            api_key=api_key,
+            user_id=os.getenv("BHASHINI_USER_ID"),
+        )
+        lang = _DIALECT_CODE_MAP.get(dialect.lower(), dialect.lower())
+        result = service.text_to_speech(text, target_language=lang)
+        if not result.get("success"):
+            return ""
+        # TODO: persist result['audio_base64'] to S3 and return that URL.
+        return ""
+    except Exception as e:
+        logger.warning(f"synthesize_speech_bhashini wrapper failed: {e}")
+        return ""

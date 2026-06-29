@@ -15,6 +15,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SkeletonLoader } from "@/components/ui/skeleton-loader";
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/$/, "");
+
 interface ChatSidebarProps {
   isOpen: boolean;
   onClose: () => void;
@@ -52,7 +54,7 @@ const ChatSidebar = ({ isOpen, onClose, onNewChat, onSelectChat, activeChatId }:
     const token = localStorage.getItem("vidhi_token");
     if (token) {
       try {
-        const res = await fetch("http://localhost:8000/api/v1/matters", {
+        const res = await fetch(`${API_BASE_URL}/api/v1/matters`, {
           headers: { "Authorization": `Bearer ${token}` }
         });
         if (res.ok) {
@@ -100,7 +102,7 @@ const ChatSidebar = ({ isOpen, onClose, onNewChat, onSelectChat, activeChatId }:
       if (token) {
         try {
           // Use professional workspace API
-          await fetch("http://localhost:8000/api/v1/matters", {
+          await fetch(`${API_BASE_URL}/api/v1/matters`, {
             method: "POST",
             headers: {
               "Authorization": `Bearer ${token}`,

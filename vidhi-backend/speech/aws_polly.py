@@ -296,3 +296,23 @@ class CachedPollyService:
                 'cached': False,
                 'language_code': language_code
             }
+
+
+def synthesize_speech(text: str, language_code: str = "hi-IN") -> str:
+    """
+    Module-level convenience wrapper used by services/chat_history.py.
+
+    Synthesizes `text` with AWS Polly, uploads it to the configured audio bucket
+    and returns a playable URL. Returns "" when AWS/Polly is unavailable so callers
+    can treat an empty string as "no audio" rather than crashing.
+    """
+    try:
+        from configs import config
+        service = AWSPollyService(region=config.AWS_REGION)
+        result = service.synthesize_and_upload_to_s3(
+            text, config.S3_BUCKET_AUDIO, language_code
+        )
+        return result.get("audio_url", "") if result.get("success") else ""
+    except Exception as e:
+        logger.warning(f"synthesize_speech wrapper failed: {e}")
+        return ""

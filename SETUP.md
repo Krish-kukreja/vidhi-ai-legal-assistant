@@ -17,10 +17,10 @@ Before touching any code, you must install the core structural languages:
 ## 2. Get the Code
 Open your terminal (Command Prompt or PowerShell) and run:
 ```bash
-git clone https://github.com/YOUR_USERNAME/vidhi.git
-cd vidhi
+git clone https://github.com/Krish-kukreja/vidhi-ai-legal-assistant.git
+cd vidhi-ai-legal-assistant
 ```
-*(Replace YOUR_USERNAME with your actual GitHub username).*
+*(This repo contains the `vidhi-assistant` frontend and `vidhi-backend` backend folders used below.)*
 
 ---
 
@@ -61,7 +61,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # 5. Start the backend server
-uvicorn app-simple:app --reload --port 8000
+uvicorn app:app --reload --port 8000
 ```
 The backend should now be running at `http://localhost:8000`.
 

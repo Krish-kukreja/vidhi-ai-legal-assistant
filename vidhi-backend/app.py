@@ -141,33 +141,41 @@ except ImportError:
     handler = None
 
 # Enable CORS
+# NOTE: a wildcard origin ("*") is invalid together with allow_credentials=True
+# (browsers reject credentialed requests against "*"). Origins are configurable
+# via the CORS_ALLOW_ORIGINS env var (comma-separated); defaults cover local dev.
+_cors_origins = os.getenv(
+    "CORS_ALLOW_ORIGINS",
+    "http://localhost:8081,http://localhost:5173,http://localhost:3000",
+)
+allow_origins = [o.strip() for o in _cors_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
 )
 
-# Add error handling middleware (first, to catch all errors)
+# ── Middleware ───────────────────────────────────────────────────────────────
+# Starlette runs middleware in REVERSE order of registration: the LAST one added
+# is the OUTERMOST (first to see the request). We add them bottom-up so the
+# effective per-request order becomes:
+#   ErrorHandler -> RequestLogging -> Sanitization -> Auth -> RateLimit -> route
+# This ensures (a) ErrorHandler wraps every other middleware, (b) RequestLogging
+# sees the request_id ErrorHandler sets, and (c) RateLimit runs AFTER Auth so it
+# can read request.state.user_id and apply registered-vs-guest limits correctly.
 from middleware.error_handler_middleware import ErrorHandlerMiddleware
-app.add_middleware(ErrorHandlerMiddleware)
-
-# Add request logging middleware
 from middleware.request_logging_middleware import RequestLoggingMiddleware
-app.add_middleware(RequestLoggingMiddleware)
-
-# Add input sanitization middleware
 from middleware.sanitization_middleware import InputSanitizationMiddleware
-app.add_middleware(InputSanitizationMiddleware)
-
-# Add authentication middleware
 from middleware.auth_middleware import AuthMiddleware
-app.add_middleware(AuthMiddleware)
-
-# Add rate limiting middleware
 from middleware.rate_limit_middleware import RateLimitMiddleware
-app.add_middleware(RateLimitMiddleware)
+
+app.add_middleware(RateLimitMiddleware)      # innermost: runs last, after auth
+app.add_middleware(AuthMiddleware)
+app.add_middleware(InputSanitizationMiddleware)
+app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(ErrorHandlerMiddleware)   # outermost: runs first, wraps all
 
 
 # Update log level from config (overrides the early INFO default)
@@ -421,9 +429,12 @@ async def shutdown_event():
     logger.info("VIDHI backend shutdown complete")
 
 
-# Include authentication routes
-from routes.auth_routes import router as auth_router
-app.include_router(auth_router)
+# NOTE: A legacy in-memory auth system (routes/auth_routes.py + services/auth_service.py)
+# used to be registered here. It expected a `user_id` field and issued jose-JWT tokens
+# with a DIFFERENT signing key, colliding with the email/password + SQLite auth the
+# frontend actually uses (defined inline below under /api/v1/auth/*) and causing every
+# Pro login to 422. Those modules were removed; services/authentication.py (SQLite +
+# signed HMAC token, verified by AuthMiddleware) is now the single source of truth.
 
 # Include cache management routes
 try:
@@ -811,9 +822,11 @@ async def simplify_document(request: DocumentEducationRequest):
     This endpoint breaks down complex legal documents into understandable sections,
     providing simplified explanations, key points, and warnings.
     """
+    if not document_education_service:
+        raise HTTPException(status_code=503, detail="Document education service not available")
     try:
         logger.info(f"Simplifying {request.document_type} document in {request.language}")
-        
+
         result = document_education_service.simplify_document(
             document_text=request.document_text,
             document_type=request.document_type,
@@ -838,6 +851,8 @@ async def explain_clause(request: ClauseExplanationRequest):
     Provides detailed explanation of a clause with real-world examples
     tailored to the user's context.
     """
+    if not document_education_service:
+        raise HTTPException(status_code=503, detail="Document education service not available")
     try:
         logger.info(f"Explaining clause in {request.language}")
         
@@ -866,6 +881,8 @@ async def define_term(request: TermDefinitionRequest):
     Provides definitions from the legal glossary or generates explanations
     for terms not in the glossary.
     """
+    if not document_education_service:
+        raise HTTPException(status_code=503, detail="Document education service not available")
     try:
         logger.info(f"Defining term '{request.term}' in {request.language}")
         
@@ -893,6 +910,8 @@ async def interactive_qa(request: InteractiveQARequest):
     Maintains conversation context to provide helpful answers about
     specific aspects of the document.
     """
+    if not document_education_service:
+        raise HTTPException(status_code=503, detail="Document education service not available")
     try:
         logger.info(f"Interactive Q&A in {request.language}")
         
@@ -925,6 +944,8 @@ async def create_teaching_session(request: TeachingSessionRequest):
     Generates a step-by-step interactive teaching session to help users
     understand the document thoroughly.
     """
+    if not document_education_service:
+        raise HTTPException(status_code=503, detail="Document education service not available")
     try:
         logger.info(f"Creating teaching session for {request.document_type} in {request.language}")
         
@@ -966,6 +987,8 @@ async def save_message(
     Stores messages with complete language information to enable
     accurate voice playback in the original language/dialect.
     """
+    if not chat_history_service:
+        raise HTTPException(status_code=503, detail="Chat history service not available")
     try:
         logger.info(f"Saving message for user {user_id} in {language_name}")
         
@@ -1003,6 +1026,8 @@ async def get_chat_history(chat_id: str, limit: Optional[int] = None):
     
     Returns all messages in a chat session with language metadata.
     """
+    if not chat_history_service:
+        raise HTTPException(status_code=503, detail="Chat history service not available")
     try:
         logger.info(f"Retrieving chat history for {chat_id}")
         
@@ -1043,6 +1068,8 @@ async def get_message_playback(
     Returns:
         Audio URL with playback metadata
     """
+    if not chat_history_service:
+        raise HTTPException(status_code=503, detail="Chat history service not available")
     try:
         logger.info(f"Getting playback for message {message_id} in chat {chat_id}")
         
@@ -1248,7 +1275,10 @@ async def research_case_law(request: CaseLawResearchRequest):
     if result.get("success"):
         return JSONResponse(content={"status": "success", "data": result})
     else:
-        raise HTTPException(status_code=500, detail=result.get("error"))@app.get("/api/v1/documents/download/{filename}")
+        raise HTTPException(status_code=500, detail=result.get("error"))
+
+
+@app.get("/api/v1/documents/download/{filename}")
 async def download_draft(filename: str):
     """Download the generated docx file"""
     import os

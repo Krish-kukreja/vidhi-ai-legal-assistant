@@ -30,7 +30,8 @@ const ContractReviewModal = ({ isOpen, onClose }: ContractReviewModalProps) => {
         setIsLoading(true);
         setResults(null);
         try {
-            const res = await fetch("http://localhost:8000/api/v1/contracts/review", {
+            const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/$/, "");
+            const res = await fetch(`${API_BASE_URL}/api/v1/contracts/review`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ document_text: contractText, playbook_rules: playbookRules })

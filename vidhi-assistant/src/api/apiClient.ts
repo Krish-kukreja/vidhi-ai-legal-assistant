@@ -15,19 +15,14 @@ import * as baseClient from './client';
 export * from './client';
 
 /**
- * Get authentication token from localStorage
+ * Get authentication token from localStorage.
+ *
+ * The login flow (pages/Login.tsx) stores the backend JWT under `vidhi_token`.
+ * (`vidhi_auth` holds only a plain identifier string like "professional_5" /
+ * "guest_...", not JSON, so it must NOT be parsed as the token source.)
  */
 function getAuthToken(): string | null {
-  const auth = localStorage.getItem('vidhi_auth');
-  if (auth) {
-    try {
-      const parsed = JSON.parse(auth);
-      return parsed.access_token || null;
-    } catch {
-      return null;
-    }
-  }
-  return null;
+  return localStorage.getItem('vidhi_token');
 }
 
 /**

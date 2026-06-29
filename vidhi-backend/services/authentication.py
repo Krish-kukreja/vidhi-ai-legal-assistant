@@ -3,11 +3,15 @@ import hmac
 import json
 import base64
 import time
+import os
 import secrets
 from typing import Dict, Any, Optional
 from services.database import get_db
 
-SECRET_KEY = b"hackathon_vidhi_super_secret_key_2026"
+# Token signing key. Override in production via the JWT_SECRET_KEY env var.
+# The fallback keeps local/dev working out of the box (and matches previously
+# issued tokens) but MUST be set to a strong secret in any real deployment.
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "hackathon_vidhi_super_secret_key_2026").encode()
 
 def hash_password(password: str, salt: str = None) -> str:
     """Hashes a password with a random salt."""

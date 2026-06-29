@@ -10,10 +10,7 @@ Integrates with monitoring for user context tracking.
 """
 
 from fastapi import Request, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.base import BaseHTTPMiddleware
-from jose import JWTError, jwt
-from datetime import datetime, timedelta
 import logging
 import os
 from typing import Optional
@@ -27,10 +24,8 @@ try:
 except ImportError:
     MONITORING_AVAILABLE = False
 
-# JWT Configuration
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
+# Token issuing + verification lives in services/authentication.py (single source
+# of truth). This middleware only *verifies* tokens, via _verify_jwt below.
 
 # API Key Configuration
 VALID_API_KEYS = set(os.getenv("API_KEYS", "").split(",")) if os.getenv("API_KEYS") else set()
@@ -52,11 +47,21 @@ PUBLIC_ENDPOINTS = {
 # Endpoints that allow guest access (but track for rate limiting)
 GUEST_ALLOWED_ENDPOINTS = {
     "/chat",
+    "/clear-session",
     "/emergency",
-    "/api/v1/documents/simplify",
-    "/api/v1/documents/explain-clause",
-    "/api/v1/documents/define-term",
 }
+
+# Path prefixes open to guests. These cover the public-facing product features
+# (document education, drafting, contract review, live research, SSE streaming,
+# and chat history). NOTE: "/api/v1/matters" is deliberately NOT here — matter
+# workspaces require an authenticated (logged-in) user.
+GUEST_ALLOWED_PREFIXES = (
+    "/api/v1/documents/",
+    "/api/v1/history/",
+    "/api/v1/research/",
+    "/api/v1/contracts/",
+    "/api/v1/stream/",
+)
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -122,8 +127,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return False
     
     def _allows_guest_access(self, path: str) -> bool:
-        """Check if endpoint allows guest access."""
-        return path in GUEST_ALLOWED_ENDPOINTS
+        """Check if endpoint allows guest access (exact match or allowed prefix)."""
+        if path in GUEST_ALLOWED_ENDPOINTS:
+            return True
+        return any(path.startswith(prefix) for prefix in GUEST_ALLOWED_PREFIXES)
     
     async def _authenticate(self, request: Request) -> dict:
         """
@@ -163,27 +170,33 @@ class AuthMiddleware(BaseHTTPMiddleware):
         }
     
     def _verify_jwt(self, token: str) -> dict:
-        """Verify JWT token."""
+        """
+        Verify the access token.
+
+        The login/register endpoints (app.py -> services/authentication.py) issue a
+        signed HMAC token, so we validate against the SAME implementation here.
+        This keeps the middleware, the login route, and the per-route
+        get_current_user dependency all using one signing key + format.
+        """
         try:
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            from services.authentication import verify_token as verify_hmac_token
+
+            payload = verify_hmac_token(token)
+            if not payload:
+                return {"valid": False, "error": "Invalid or expired token"}
+
             user_id = payload.get("sub")
-            
             if user_id is None:
                 return {"valid": False, "error": "Invalid token payload"}
-            
-            # Check expiration
-            exp = payload.get("exp")
-            if exp and datetime.utcnow().timestamp() > exp:
-                return {"valid": False, "error": "Token expired"}
-            
+
             return {
                 "valid": True,
                 "user_id": user_id,
                 "data": payload
             }
-        
-        except JWTError as e:
-            logger.warning(f"JWT verification failed: {e}")
+
+        except Exception as e:
+            logger.warning(f"Token verification failed: {e}")
             return {"valid": False, "error": "Invalid token"}
     
     def _verify_api_key(self, api_key: str) -> bool:
@@ -208,51 +221,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         )
 
 
-# Utility functions for creating tokens
-
-def create_access_token(user_id: str, additional_data: dict = None) -> str:
-    """
-    Create a JWT access token.
-    
-    Args:
-        user_id: Unique user identifier
-        additional_data: Additional claims to include in token
-        
-    Returns:
-        JWT token string
-    """
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    
-    to_encode = {
-        "sub": user_id,
-        "exp": expire,
-        "iat": datetime.utcnow(),
-        "type": "access"
-    }
-    
-    if additional_data:
-        to_encode.update(additional_data)
-    
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
-
-
-def verify_token(token: str) -> Optional[dict]:
-    """
-    Verify a JWT token and return payload.
-    
-    Args:
-        token: JWT token string
-        
-    Returns:
-        Token payload if valid, None otherwise
-    """
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload
-    except JWTError:
-        return None
-
+# Utility functions for reading the authenticated user off the request state.
+# (Token creation/verification intentionally lives only in services/authentication.py.)
 
 def get_current_user(request: Request) -> dict:
     """

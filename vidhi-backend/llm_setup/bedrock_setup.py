@@ -52,6 +52,26 @@ def _initialize_bedrock_llm(model_id: str, region: str = "ap-south-1"):
         return None, str(e)
 
 
+def get_llm(
+    model_id: str = "anthropic.claude-3-haiku-20240307-v1:0",
+    region: str = "ap-south-1",
+):
+    """
+    Module-level helper that returns a ready-to-use ChatBedrock LLM handle.
+
+    Used by lightweight services (e.g. services/document_education.py) that just
+    need a plain `.invoke()`-able LLM rather than the full RAG pipeline. Returns
+    None (instead of raising) when Bedrock can't be initialized, so importing/
+    instantiating those services never crashes app startup — the LLM-backed
+    methods simply degrade while non-LLM paths (e.g. the static glossary) keep working.
+    """
+    llm, err = _initialize_bedrock_llm(model_id, region)
+    if err:
+        logging.getLogger(__name__).warning(f"get_llm: Bedrock unavailable: {err}")
+        return None
+    return llm
+
+
 #  Prompts 
 
 # Step 1: Condense the question using chat history
