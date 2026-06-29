@@ -42,7 +42,9 @@ def get_driver():
         opts.add_argument("--disable-dev-shm-usage")
         opts.add_argument("--disable-gpu")
         opts.add_argument("--window-size=1280,800")
-        opts.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0")
+        opts.add_argument(
+            "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0"
+        )
         driver = webdriver.Chrome(options=opts)
         logger.info(" Using headless Chrome")
         return driver
@@ -107,10 +109,14 @@ def scrape_scheme(driver, slug: str, name: str) -> dict | None:
                 )
                 if isinstance(scheme, dict) and scheme:
                     return {
-                        "scheme_name": scheme.get("name") or scheme.get("schemeName") or name,
+                        "scheme_name": scheme.get("name")
+                        or scheme.get("schemeName")
+                        or name,
                         "scheme_link": url,
                         "slug": slug,
-                        "details": scheme.get("details") or scheme.get("description") or "",
+                        "details": scheme.get("details")
+                        or scheme.get("description")
+                        or "",
                         "benefits": scheme.get("benefits") or "",
                         "eligibility": scheme.get("eligibility") or "",
                         "application_process": (
@@ -124,7 +130,9 @@ def scrape_scheme(driver, slug: str, name: str) -> dict | None:
                             or ""
                         ),
                         "tags": scheme.get("tags", []),
-                        "ministry": scheme.get("ministry") or scheme.get("nodal_ministry") or "",
+                        "ministry": scheme.get("ministry")
+                        or scheme.get("nodal_ministry")
+                        or "",
                         "state": scheme.get("state") or "Central",
                     }
         except Exception:
@@ -162,7 +170,8 @@ def is_meaningful(scheme: dict) -> bool:
     """Returns True if scheme has real content (not all empty/NA)"""
     fields = ["details", "benefits", "eligibility", "application_process"]
     return any(
-        str(scheme.get(f, "")).strip() not in ("", "Not Available", "N/A", "None", "null")
+        str(scheme.get(f, "")).strip()
+        not in ("", "Not Available", "N/A", "None", "null")
         for f in fields
     )
 
@@ -183,7 +192,9 @@ def run():
         logger.info(f"Resuming from checkpoint: {len(done_slugs)} already done")
 
     remaining = [s for s in slugs if s["slug"] not in done_slugs]
-    logger.info(f"Total: {len(slugs)} | Done: {len(done_slugs)} | Remaining: {len(remaining)}")
+    logger.info(
+        f"Total: {len(slugs)} | Done: {len(done_slugs)} | Remaining: {len(remaining)}"
+    )
 
     failed = []
     driver = get_driver()
@@ -198,7 +209,9 @@ def run():
             if result and is_meaningful(result):
                 all_schemes.append(result)
                 if len(all_schemes) % 10 == 0:
-                    logger.info(f"[{i+1}/{len(remaining)}]  {len(all_schemes)} valid schemes")
+                    logger.info(
+                        f"[{i+1}/{len(remaining)}]  {len(all_schemes)} valid schemes"
+                    )
             else:
                 failed.append(slug)
 

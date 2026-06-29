@@ -16,7 +16,8 @@ from stores.chroma import load_vectorstore, create_retriever
 
 logger = logging.getLogger(__name__)
 
-CROSS_QUESTION_PROMPT = ChatPromptTemplate.from_template("""\
+CROSS_QUESTION_PROMPT = ChatPromptTemplate.from_template(
+    """\
 You are an expert yet accessible AI legal assistant for VIDHI. A user from the general public wants to create a {document_type}.
 So far, they have provided the following information:
 Parties: {parties}
@@ -26,9 +27,11 @@ Identify 1-3 critical missing details required to draft a legally sound standard
 Ask the user a clear, plain-English question to gather this missing information. Do not use legal jargon. 
 If no critical information is missing, output 'READY'.
 Question:
-""")
+"""
+)
 
-DRAFTING_PROMPT = ChatPromptTemplate.from_template("""\
+DRAFTING_PROMPT = ChatPromptTemplate.from_template(
+    """\
 You are an expert Indian corporate and family lawyer acting as an AI legal draftsman for VIDHI. 
 Your task is to draft a legal document based on user requirements.
 
@@ -52,17 +55,23 @@ INSTRUCTIONS:
 6. The jurisdiction is India unless specified otherwise.
 
 FINAL LEGAL DRAFT:
-""")
+"""
+)
+
 
 class DocumentDraftingService:
     def __init__(self):
         self._logger = logger
         self.embeddings = config.get_embeddings()
-        
+
         # We load a dedicated vector store for templates
         if self.embeddings:
-            self.vectorstore = load_vectorstore(self.embeddings, collection_name="vidhi-templates")
-            self.retriever = create_retriever(self.vectorstore) if self.vectorstore else None
+            self.vectorstore = load_vectorstore(
+                self.embeddings, collection_name="vidhi-templates"
+            )
+            self.retriever = (
+                create_retriever(self.vectorstore) if self.vectorstore else None
+            )
         else:
             self.vectorstore = None
             self.retriever = None
@@ -72,65 +81,83 @@ class DocumentDraftingService:
             model_id=config.BEDROCK_MODEL_ID_ADVANCED,
             region_name=config.AWS_REGION,
             model_kwargs={
-                "temperature": 0.2, # Keep hallucination low for legal drafts
-                "max_tokens": 4096
-            }
+                "temperature": 0.2,  # Keep hallucination low for legal drafts
+                "max_tokens": 4096,
+            },
         )
-        
+
         self.cross_question_chain = CROSS_QUESTION_PROMPT | self.llm | StrOutputParser()
         self.drafting_chain = DRAFTING_PROMPT | self.llm | StrOutputParser()
-        
+
         # Ensure output directory exists for docx files
-        self.output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "storage", "drafts")
+        self.output_dir = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), "storage", "drafts"
+        )
         os.makedirs(self.output_dir, exist_ok=True)
 
-    def generate_cross_questions(self, document_type: str, parties: str, key_terms: str) -> Dict[str, Any]:
+    def generate_cross_questions(
+        self, document_type: str, parties: str, key_terms: str
+    ) -> Dict[str, Any]:
         """
         AI Cross-questioning: Determines if more info is needed from a general user
         before drafting the document.
         """
         try:
             self._logger.info("Generating cross questions for general user...")
-            question = self.cross_question_chain.invoke({
-                "document_type": document_type,
-                "parties": parties,
-                "key_terms": key_terms
-            })
-            
+            question = self.cross_question_chain.invoke(
+                {
+                    "document_type": document_type,
+                    "parties": parties,
+                    "key_terms": key_terms,
+                }
+            )
+
             is_ready = "READY" in question.upper()
             return {
                 "success": True,
                 "needs_more_info": not is_ready,
-                "question": None if is_ready else question.strip()
+                "question": None if is_ready else question.strip(),
             }
         except Exception as e:
             self._logger.error(f"Error in cross questioning: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
 
-    def generate_draft(self, document_type: str, parties: str, key_terms: str, 
-                       persona: str = 'general', custom_template: Optional[str] = None) -> Dict[str, Any]:
+    def generate_draft(
+        self,
+        document_type: str,
+        parties: str,
+        key_terms: str,
+        persona: str = "general",
+        custom_template: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Retrieves standard or custom template and generates a filled out draft using LLM.
         Supports personas: 'general' (standard fallback) and 'professional' (strict adherence to custom template).
         """
         try:
-            self._logger.info(f"Generating draft for type: {document_type} (Persona: {persona})")
-            
+            self._logger.info(
+                f"Generating draft for type: {document_type} (Persona: {persona})"
+            )
+
             # Retrieve relevant templates
             if custom_template:
                 template_context = custom_template
                 self._logger.info("Using provided custom firm template.")
             else:
-                template_context = "No standard template found. Rely on general legal knowledge."
+                template_context = (
+                    "No standard template found. Rely on general legal knowledge."
+                )
                 if self.retriever:
                     docs = self.retriever.invoke(f"{document_type} template")
                     if docs:
                         # Just take the best matching template
                         template_context = docs[0].page_content
-                        self._logger.info(f"Retrieved standard template context: {template_context[:50]}...")
-            
+                        self._logger.info(
+                            f"Retrieved standard template context: {template_context[:50]}..."
+                        )
+
             # Persona Instructions
-            if persona == 'professional':
+            if persona == "professional":
                 persona_instructions = (
                     "PERSONA: Professional Lawyer.\n"
                     "STRICT REQUIREMENT: You MUST strictly adhere to the exact structure, proprietary language, "
@@ -144,35 +171,43 @@ class DocumentDraftingService:
                     "provided by the user into logically sound standard clauses. Ensure the final document "
                     "is comprehensive and robust."
                 )
-            
+
             # Generate the draft
-            markdown_draft = self.drafting_chain.invoke({
-                "persona_instructions": persona_instructions,
-                "template_context": template_context,
-                "document_type": document_type,
-                "parties": parties,
-                "key_terms": key_terms
-            })
-            
+            markdown_draft = self.drafting_chain.invoke(
+                {
+                    "persona_instructions": persona_instructions,
+                    "template_context": template_context,
+                    "document_type": document_type,
+                    "parties": parties,
+                    "key_terms": key_terms,
+                }
+            )
+
             # Create a docx file
             docx_filename = f"{document_type.replace(' ', '_')}_{int(time.time())}.docx"
             docx_path = os.path.join(self.output_dir, docx_filename)
-            
+
             self._convert_markdown_to_docx(markdown_draft, docx_path)
-            
+
             return {
                 "success": True,
                 "markdown_draft": markdown_draft,
                 "download_url": f"/api/v1/documents/download/{docx_filename}",
-                "template_used": "Custom" if custom_template else ("Standard" if template_context != "No standard template found. Rely on general legal knowledge." else "None")
+                "template_used": (
+                    "Custom"
+                    if custom_template
+                    else (
+                        "Standard"
+                        if template_context
+                        != "No standard template found. Rely on general legal knowledge."
+                        else "None"
+                    )
+                ),
             }
-            
+
         except Exception as e:
             self._logger.error(f"Error generating legal draft: {e}", exc_info=True)
-            return {
-                "success": False,
-                "error": str(e)
-            }
+            return {"success": False, "error": str(e)}
 
     def _convert_markdown_to_docx(self, markdown_text: str, file_path: str):
         """
@@ -180,37 +215,38 @@ class DocumentDraftingService:
         In a production environment, you might use a more robust md->docx converter.
         """
         doc = docx.Document()
-        
+
         # Set default font
-        style = doc.styles['Normal']
+        style = doc.styles["Normal"]
         font = style.font
-        font.name = 'Times New Roman'
+        font.name = "Times New Roman"
         font.size = Pt(12)
-        
-        lines = markdown_text.split('\n')
-        
+
+        lines = markdown_text.split("\n")
+
         for line in lines:
             line = line.strip()
             if not line:
                 doc.add_paragraph()
                 continue
-                
-            if line.startswith('# '):
+
+            if line.startswith("# "):
                 p = doc.add_paragraph(line[2:])
-                p.style = doc.styles['Heading 1']
-            elif line.startswith('## '):
+                p.style = doc.styles["Heading 1"]
+            elif line.startswith("## "):
                 p = doc.add_paragraph(line[3:])
-                p.style = doc.styles['Heading 2']
-            elif line.startswith('### '):
+                p.style = doc.styles["Heading 2"]
+            elif line.startswith("### "):
                 p = doc.add_paragraph(line[4:])
-                p.style = doc.styles['Heading 3']
-            elif line.startswith('- ') or line.startswith('* '):
-                p = doc.add_paragraph(line[2:], style='List Bullet')
+                p.style = doc.styles["Heading 3"]
+            elif line.startswith("- ") or line.startswith("* "):
+                p = doc.add_paragraph(line[2:], style="List Bullet")
             else:
                 p = doc.add_paragraph(line)
-        
+
         # Save document
         doc.save(file_path)
+
 
 # Singleton instance
 document_drafting_service = DocumentDraftingService()

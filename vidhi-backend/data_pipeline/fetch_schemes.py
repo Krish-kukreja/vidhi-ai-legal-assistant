@@ -19,9 +19,10 @@ MYSCHEME_SEARCH_API = "https://www.myscheme.gov.in/api/v1/search"
 MYSCHEME_BASE = "https://www.myscheme.gov.in"
 
 
-# 
+#
 # APPROACH 1: Use myscheme.gov.in internal API
-# 
+#
+
 
 def get_all_scheme_slugs_via_api() -> list[dict]:
     """
@@ -35,7 +36,7 @@ def get_all_scheme_slugs_via_api() -> list[dict]:
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Accept": "application/json",
-        "Referer": "https://www.myscheme.gov.in/search"
+        "Referer": "https://www.myscheme.gov.in/search",
     }
 
     print("Fetching all scheme slugs from myscheme.gov.in API...")
@@ -47,9 +48,11 @@ def get_all_scheme_slugs_via_api() -> list[dict]:
                 "lang": "en",
                 "page": page,
                 "size": page_size,
-                "sortBy": "relevance"
+                "sortBy": "relevance",
             }
-            resp = requests.get(MYSCHEME_SEARCH_API, params=params, headers=headers, timeout=30)
+            resp = requests.get(
+                MYSCHEME_SEARCH_API, params=params, headers=headers, timeout=30
+            )
 
             if resp.status_code != 200:
                 print(f"API returned {resp.status_code}, stopping.")
@@ -68,7 +71,9 @@ def get_all_scheme_slugs_via_api() -> list[dict]:
                 if slug:
                     all_schemes.append({"scheme_name": name, "slug": slug})
 
-            print(f"  Page {page}: got {len(schemes)} schemes (total so far: {len(all_schemes)})")
+            print(
+                f"  Page {page}: got {len(schemes)} schemes (total so far: {len(all_schemes)})"
+            )
             page += 1
             time.sleep(0.5)
 
@@ -119,18 +124,23 @@ def get_scheme_detail(slug: str) -> dict:
                 scheme = page_props.get("scheme") or page_props.get("schemeData") or {}
                 if scheme:
                     return {
-                        "scheme_name": scheme.get("name") or scheme.get("schemeName", ""),
+                        "scheme_name": scheme.get("name")
+                        or scheme.get("schemeName", ""),
                         "scheme_link": url,
                         "slug": slug,
-                        "details": scheme.get("details") or scheme.get("description", "Not Available"),
+                        "details": scheme.get("details")
+                        or scheme.get("description", "Not Available"),
                         "benefits": scheme.get("benefits", "Not Available"),
                         "eligibility": scheme.get("eligibility", "Not Available"),
-                        "application_process": scheme.get("applicationProcess") or scheme.get("howToApply", "Not Available"),
-                        "documents_required": scheme.get("documents") or scheme.get("documentsRequired", "Not Available"),
+                        "application_process": scheme.get("applicationProcess")
+                        or scheme.get("howToApply", "Not Available"),
+                        "documents_required": scheme.get("documents")
+                        or scheme.get("documentsRequired", "Not Available"),
                         "tags": scheme.get("tags", []),
-                        "ministry": scheme.get("ministry") or scheme.get("nodal_ministry", ""),
+                        "ministry": scheme.get("ministry")
+                        or scheme.get("nodal_ministry", ""),
                         "state": scheme.get("state", "Central"),
-                        "source": "__NEXT_DATA__"
+                        "source": "__NEXT_DATA__",
                     }
             except Exception:
                 pass
@@ -144,8 +154,10 @@ def get_scheme_detail(slug: str) -> dict:
             "eligibility": extract_section("eligibility"),
             "application_process": extract_section("application-process"),
             "documents_required": extract_section("documents-required"),
-            "tags": [tag.get_text(strip=True) for tag in soup.select("#tags div, .tag")],
-            "source": "html_fallback"
+            "tags": [
+                tag.get_text(strip=True) for tag in soup.select("#tags div, .tag")
+            ],
+            "source": "html_fallback",
         }
 
     except Exception as e:
@@ -153,9 +165,10 @@ def get_scheme_detail(slug: str) -> dict:
         return {}
 
 
-# 
+#
 # APPROACH 2: Hugging Face dataset (instant fallback)
-# 
+#
+
 
 def fetch_from_huggingface():
     """
@@ -165,6 +178,7 @@ def fetch_from_huggingface():
     print("\nTrying Hugging Face dataset download...")
     try:
         from datasets import load_dataset
+
         # Try multiple known datasets
         dataset_ids = [
             "AlokAI/myscheme",
@@ -175,10 +189,14 @@ def fetch_from_huggingface():
             try:
                 ds = load_dataset(dataset_id, split="train")
                 records = [dict(row) for row in ds]
-                out_path = os.path.join(OUTPUT_DIR, f"schemes_hf_{dataset_id.replace('/', '_')}.json")
+                out_path = os.path.join(
+                    OUTPUT_DIR, f"schemes_hf_{dataset_id.replace('/', '_')}.json"
+                )
                 with open(out_path, "w", encoding="utf-8") as f:
                     json.dump(records, f, ensure_ascii=False, indent=2)
-                print(f" Saved {len(records)} records from HuggingFace {dataset_id} → {out_path}")
+                print(
+                    f" Saved {len(records)} records from HuggingFace {dataset_id} → {out_path}"
+                )
                 return out_path
             except Exception as e:
                 print(f"    {dataset_id} failed: {e}")
@@ -187,9 +205,10 @@ def fetch_from_huggingface():
     return None
 
 
-# 
+#
 # MAIN
-# 
+#
+
 
 def fetch_all_schemes():
     # Step 1: Try Hugging Face for instant data
@@ -201,7 +220,9 @@ def fetch_all_schemes():
 
     if not scheme_stubs:
         print("  API failed, trying to load slugs from existing JSON...")
-        existing = os.path.join(os.path.dirname(__file__), "..", "myschemes_scraped.json")
+        existing = os.path.join(
+            os.path.dirname(__file__), "..", "myschemes_scraped.json"
+        )
         if os.path.exists(existing):
             with open(existing, encoding="utf-8") as f:
                 old = json.load(f)
@@ -209,9 +230,10 @@ def fetch_all_schemes():
             scheme_stubs = [
                 {
                     "scheme_name": s.get("scheme_name", ""),
-                    "slug": s.get("scheme_link", "").rstrip("/").split("/")[-1]
+                    "slug": s.get("scheme_link", "").rstrip("/").split("/")[-1],
                 }
-                for s in old if s.get("scheme_link")
+                for s in old
+                if s.get("scheme_link")
             ]
             print(f"  Loaded {len(scheme_stubs)} slugs from existing JSON")
 

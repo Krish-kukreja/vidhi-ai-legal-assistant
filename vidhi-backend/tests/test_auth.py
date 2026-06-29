@@ -34,7 +34,7 @@ def temp_db(monkeypatch):
 def test_hash_is_salted_and_verifies():
     h1 = auth.hash_password("pw123456")
     h2 = auth.hash_password("pw123456")
-    assert h1 != h2                       # random salt -> different hashes
+    assert h1 != h2  # random salt -> different hashes
     assert auth.verify_password("pw123456", h1)
     assert not auth.verify_password("wrong", h1)
 
@@ -45,13 +45,13 @@ def test_register_and_login():
     assert r["success"] and r["token"]
 
     dup = auth.register_user("a@law.com", "pw123456", "Counsel")
-    assert not dup["success"]             # duplicate email rejected
+    assert not dup["success"]  # duplicate email rejected
 
     li = auth.login_user("a@law.com", "pw123456")
     assert li["success"] and li["token"]
 
     bad = auth.login_user("a@law.com", "nope")
-    assert not bad["success"]             # wrong password rejected
+    assert not bad["success"]  # wrong password rejected
 
 
 # ── Token round-trip ──────────────────────────────────────────────
@@ -66,15 +66,18 @@ def test_token_roundtrip():
 # ── AuthMiddleware behaviour ──────────────────────────────────────
 def _build_app():
     from middleware.auth_middleware import AuthMiddleware
+
     app = FastAPI()
     app.add_middleware(AuthMiddleware)
 
-    @app.get("/chat")                      # guest-allowed
+    @app.get("/chat")  # guest-allowed
     async def chat(request: Request):
-        return {"user_id": getattr(request.state, "user_id", None),
-                "auth": getattr(request.state, "is_authenticated", False)}
+        return {
+            "user_id": getattr(request.state, "user_id", None),
+            "auth": getattr(request.state, "is_authenticated", False),
+        }
 
-    @app.get("/api/v1/matters")            # protected (not guest-allowed)
+    @app.get("/api/v1/matters")  # protected (not guest-allowed)
     async def matters(request: Request):
         return {"user_id": request.state.user_id}
 

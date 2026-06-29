@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 # Import monitoring (optional)
 try:
     from utils.monitoring import monitoring
+
     MONITORING_AVAILABLE = True
 except ImportError:
     MONITORING_AVAILABLE = False
@@ -28,7 +29,9 @@ except ImportError:
 # of truth). This middleware only *verifies* tokens, via _verify_jwt below.
 
 # API Key Configuration
-VALID_API_KEYS = set(os.getenv("API_KEYS", "").split(",")) if os.getenv("API_KEYS") else set()
+VALID_API_KEYS = (
+    set(os.getenv("API_KEYS", "").split(",")) if os.getenv("API_KEYS") else set()
+)
 
 # Public endpoints that don't require authentication
 PUBLIC_ENDPOINTS = {
@@ -68,15 +71,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
     """
     Middleware that enforces authentication on protected endpoints.
     """
-    
+
     async def dispatch(self, request: Request, call_next):
         # Skip authentication for public endpoints
         if self._is_public_endpoint(request.url.path):
             return await call_next(request)
-        
+
         # Try to authenticate
         auth_result = await self._authenticate(request)
-        
+
         if not auth_result["authenticated"]:
             # Check if guest access is allowed
             if self._allows_guest_access(request.url.path):
@@ -84,7 +87,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 request.state.user_id = "guest"
                 request.state.user_type = "guest"
                 request.state.is_authenticated = False
-                
+
                 # Set guest user context in monitoring
                 if MONITORING_AVAILABLE:
                     try:
@@ -93,45 +96,49 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         pass
             else:
                 # Reject request
-                return self._unauthorized_response(auth_result.get("error", "Authentication required"))
+                return self._unauthorized_response(
+                    auth_result.get("error", "Authentication required")
+                )
         else:
             # Set user info in request state
             request.state.user_id = auth_result["user_id"]
             request.state.user_type = auth_result["user_type"]
             request.state.is_authenticated = True
             request.state.user_data = auth_result.get("user_data", {})
-            
+
             # Set user context in monitoring
             if MONITORING_AVAILABLE:
                 try:
-                    monitoring.set_user({
-                        "user_id": auth_result["user_id"],
-                        "user_type": auth_result["user_type"]
-                    })
+                    monitoring.set_user(
+                        {
+                            "user_id": auth_result["user_id"],
+                            "user_type": auth_result["user_type"],
+                        }
+                    )
                 except:
                     pass
-        
+
         response = await call_next(request)
         return response
-    
+
     def _is_public_endpoint(self, path: str) -> bool:
         """Check if endpoint is public."""
         # Exact match
         if path in PUBLIC_ENDPOINTS:
             return True
-        
+
         # Prefix match for docs
         if path.startswith("/docs") or path.startswith("/redoc"):
             return True
-        
+
         return False
-    
+
     def _allows_guest_access(self, path: str) -> bool:
         """Check if endpoint allows guest access (exact match or allowed prefix)."""
         if path in GUEST_ALLOWED_ENDPOINTS:
             return True
         return any(path.startswith(prefix) for prefix in GUEST_ALLOWED_PREFIXES)
-    
+
     async def _authenticate(self, request: Request) -> dict:
         """
         Try multiple authentication methods in order:
@@ -149,9 +156,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     "authenticated": True,
                     "user_id": jwt_result["user_id"],
                     "user_type": "registered",
-                    "user_data": jwt_result.get("data", {})
+                    "user_data": jwt_result.get("data", {}),
                 }
-        
+
         # Try API key
         api_key = request.headers.get("X-API-Key")
         if api_key:
@@ -160,15 +167,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     "authenticated": True,
                     "user_id": f"api_key_{api_key[:8]}",
                     "user_type": "service",
-                    "user_data": {"api_key": api_key[:8]}
+                    "user_data": {"api_key": api_key[:8]},
                 }
-        
+
         # No valid authentication
         return {
             "authenticated": False,
-            "error": "Invalid or missing authentication credentials"
+            "error": "Invalid or missing authentication credentials",
         }
-    
+
     def _verify_jwt(self, token: str) -> dict:
         """
         Verify the access token.
@@ -189,64 +196,61 @@ class AuthMiddleware(BaseHTTPMiddleware):
             if user_id is None:
                 return {"valid": False, "error": "Invalid token payload"}
 
-            return {
-                "valid": True,
-                "user_id": user_id,
-                "data": payload
-            }
+            return {"valid": True, "user_id": user_id, "data": payload}
 
         except Exception as e:
             logger.warning(f"Token verification failed: {e}")
             return {"valid": False, "error": "Invalid token"}
-    
+
     def _verify_api_key(self, api_key: str) -> bool:
         """Verify API key."""
         if not VALID_API_KEYS:
             # No API keys configured, reject
             return False
-        
+
         return api_key in VALID_API_KEYS
-    
+
     def _unauthorized_response(self, message: str):
         """Return 401 Unauthorized response."""
         from fastapi.responses import JSONResponse
+
         return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
             content={
                 "detail": message,
                 "error": "unauthorized",
-                "hint": "Please provide valid authentication credentials (JWT token or API key)"
+                "hint": "Please provide valid authentication credentials (JWT token or API key)",
             },
-            headers={"WWW-Authenticate": "Bearer"}
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
 
 # Utility functions for reading the authenticated user off the request state.
 # (Token creation/verification intentionally lives only in services/authentication.py.)
 
+
 def get_current_user(request: Request) -> dict:
     """
     Get current user from request state.
-    
+
     Args:
         request: FastAPI request object
-        
+
     Returns:
         User info dictionary
-        
+
     Raises:
         HTTPException if not authenticated
     """
     if not getattr(request.state, "is_authenticated", False):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
         )
-    
+
     return {
         "user_id": request.state.user_id,
         "user_type": request.state.user_type,
-        "user_data": getattr(request.state, "user_data", {})
+        "user_data": getattr(request.state, "user_data", {}),
     }
 
 
@@ -261,21 +265,20 @@ def require_auth(request: Request):
 def get_current_user_optional(request: Request) -> Optional[dict]:
     """
     Get current user from request state (optional - returns None if not authenticated).
-    
+
     This is useful for endpoints that work for both authenticated and guest users.
-    
+
     Args:
         request: FastAPI request object
-        
+
     Returns:
         User info dictionary if authenticated, None otherwise
     """
     if not getattr(request.state, "is_authenticated", False):
         return None
-    
+
     return {
         "user_id": request.state.user_id,
         "user_type": request.state.user_type,
-        "user_data": getattr(request.state, "user_data", {})
+        "user_data": getattr(request.state, "user_data", {}),
     }
-

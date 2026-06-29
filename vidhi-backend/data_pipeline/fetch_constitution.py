@@ -56,19 +56,24 @@ def fetch_constitution_from_legislative():
         soup = BeautifulSoup(resp.text, "html.parser")
 
         # Try to find all article links
-        links = [a["href"] for a in soup.find_all("a", href=True) if "article" in a["href"].lower()]
+        links = [
+            a["href"]
+            for a in soup.find_all("a", href=True)
+            if "article" in a["href"].lower()
+        ]
         print(f"Found {len(links)} article links")
 
         for link in links[:10]:  # test first 10
-            full_url = link if link.startswith("http") else "https://legislative.gov.in" + link
+            full_url = (
+                link if link.startswith("http") else "https://legislative.gov.in" + link
+            )
             r = requests.get(full_url, timeout=30)
             s = BeautifulSoup(r.text, "html.parser")
             body = s.find("div", class_="field-item") or s.find("article")
             if body:
-                articles.append({
-                    "url": full_url,
-                    "text": body.get_text(separator="\n", strip=True)
-                })
+                articles.append(
+                    {"url": full_url, "text": body.get_text(separator="\n", strip=True)}
+                )
 
     except Exception as e:
         print(f"Error scraping legislative.gov.in: {e}")

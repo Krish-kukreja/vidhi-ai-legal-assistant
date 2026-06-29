@@ -16,10 +16,7 @@ async def get_stats(user: Dict = Depends(verify_token)) -> Dict[str, Any]:
     Get cache statistics.
     Requires authentication.
     """
-    return {
-        "success": True,
-        "data": get_cache_stats()
-    }
+    return {"success": True, "data": get_cache_stats()}
 
 
 @router.post("/clear")
@@ -29,10 +26,7 @@ async def clear_cache(user: Dict = Depends(verify_token)) -> Dict[str, Any]:
     Requires authentication.
     """
     clear_all_caches()
-    return {
-        "success": True,
-        "message": "All caches cleared"
-    }
+    return {"success": True, "message": "All caches cleared"}
 
 
 @router.post("/cleanup")
@@ -42,7 +36,4 @@ async def cleanup_cache(user: Dict = Depends(verify_token)) -> Dict[str, Any]:
     Requires authentication.
     """
     cleanup_all_caches()
-    return {
-        "success": True,
-        "message": "Expired cache entries cleaned up"
-    }
+    return {"success": True, "message": "Expired cache entries cleaned up"}

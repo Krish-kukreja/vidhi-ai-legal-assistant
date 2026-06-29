@@ -23,10 +23,11 @@ HEADERS = {
 
 # 1. CONSTITUTION OF INDIA
 
+
 def fetch_constitution():
-    print("\n" + ""*60)
+    print("\n" + "" * 60)
     print("   DOWNLOADING: Constitution of India")
-    print(""*60)
+    print("" * 60)
 
     out_path = os.path.join(RAW_DIR, "constitution_of_india.json")
 
@@ -38,7 +39,9 @@ def fetch_constitution():
         data = r.json()
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        print(f"   Saved Constitution JSON ({len(json.dumps(data))//1024} KB) → {out_path}")
+        print(
+            f"   Saved Constitution JSON ({len(json.dumps(data))//1024} KB) → {out_path}"
+        )
         return out_path
     except Exception as e:
         print(f"    GitHub download failed: {e}")
@@ -71,13 +74,34 @@ def fetch_constitution_legislative():
 
     # Use the more reliable WikiSource version (public domain)
     wikisource_parts = [
-        ("Preamble + Part I", "https://en.wikisource.org/wiki/Constitution_of_India/Preamble"),
-        ("Part III - Fundamental Rights", "https://en.wikisource.org/wiki/Constitution_of_India/Part_III"),
-        ("Part IV - Directive Principles", "https://en.wikisource.org/wiki/Constitution_of_India/Part_IV"),
-        ("Part IVA - Fundamental Duties", "https://en.wikisource.org/wiki/Constitution_of_India/Part_IVA"),
-        ("Part V - The Union", "https://en.wikisource.org/wiki/Constitution_of_India/Part_V"),
-        ("Part VI - The States", "https://en.wikisource.org/wiki/Constitution_of_India/Part_VI"),
-        ("Part XVIII - Emergency Provisions", "https://en.wikisource.org/wiki/Constitution_of_India/Part_XVIII"),
+        (
+            "Preamble + Part I",
+            "https://en.wikisource.org/wiki/Constitution_of_India/Preamble",
+        ),
+        (
+            "Part III - Fundamental Rights",
+            "https://en.wikisource.org/wiki/Constitution_of_India/Part_III",
+        ),
+        (
+            "Part IV - Directive Principles",
+            "https://en.wikisource.org/wiki/Constitution_of_India/Part_IV",
+        ),
+        (
+            "Part IVA - Fundamental Duties",
+            "https://en.wikisource.org/wiki/Constitution_of_India/Part_IVA",
+        ),
+        (
+            "Part V - The Union",
+            "https://en.wikisource.org/wiki/Constitution_of_India/Part_V",
+        ),
+        (
+            "Part VI - The States",
+            "https://en.wikisource.org/wiki/Constitution_of_India/Part_VI",
+        ),
+        (
+            "Part XVIII - Emergency Provisions",
+            "https://en.wikisource.org/wiki/Constitution_of_India/Part_XVIII",
+        ),
     ]
 
     for part_name, part_url in wikisource_parts:
@@ -87,11 +111,13 @@ def fetch_constitution_legislative():
             content_div = soup.find("div", class_="mw-parser-output")
             if content_div:
                 text = content_div.get_text(separator="\n", strip=True)
-                articles.append({
-                    "part": part_name,
-                    "source_url": part_url,
-                    "content": text[:50000]  # cap at 50k chars per part
-                })
+                articles.append(
+                    {
+                        "part": part_name,
+                        "source_url": part_url,
+                        "content": text[:50000],  # cap at 50k chars per part
+                    }
+                )
                 print(f"     {part_name}: {len(text)} chars")
             time.sleep(1)
         except Exception as e:
@@ -108,21 +134,24 @@ def fetch_constitution_legislative():
 # Updated to 2024: IPC replaced by BNS, CrPC by BNSS, Evidence Act by BSA
 PRIORITY_ACTS = [
     # New criminal laws (2023, effective July 2024)
-    ("Bharatiya Nyaya Sanhita 2023 (replaces IPC)",      "2023/45"),
+    ("Bharatiya Nyaya Sanhita 2023 (replaces IPC)", "2023/45"),
     ("Bharatiya Nagarik Suraksha Sanhita 2023 (replaces CrPC)", "2023/46"),
     ("Bharatiya Sakshya Adhiniyam 2023 (replaces Evidence Act)", "2023/47"),
     # Key welfare/rights acts
     ("Protection of Children from Sexual Offences Act 2012", "2012/32"),
     ("Protection of Women from Domestic Violence Act 2005", "2005/43"),
-    ("Right to Information Act 2005",        "2005/22"),
-    ("Scheduled Castes and Scheduled Tribes (Prevention of Atrocities) Act 1989", "1989/33"),
+    ("Right to Information Act 2005", "2005/22"),
+    (
+        "Scheduled Castes and Scheduled Tribes (Prevention of Atrocities) Act 1989",
+        "1989/33",
+    ),
     ("Sexual Harassment of Women at Workplace Act 2013", "2013/14"),
-    ("Legal Services Authorities Act 1987",  "1987/39"),
-    ("Dowry Prohibition Act 1961",           "1961/28"),
+    ("Legal Services Authorities Act 1987", "1987/39"),
+    ("Dowry Prohibition Act 1961", "1961/28"),
     ("Right of Children to Free and Compulsory Education Act 2009", "2009/35"),
-    ("Persons with Disabilities Act 1995",   "1995/1"),
+    ("Persons with Disabilities Act 1995", "1995/1"),
     ("Bonded Labour System Abolition Act 1976", "1976/19"),
-    ("Child Labour Prohibition Act 1986",    "1986/61"),
+    ("Child Labour Prohibition Act 1986", "1986/61"),
     ("National Human Rights Commission Act 1993", "1993/10"),
 ]
 
@@ -150,7 +179,9 @@ def fetch_act_indiacode(act_name: str, handle_id: str) -> list[dict]:
                 text = content.get_text(separator="\n", strip=True)
                 if len(text) > 200:
                     for i in range(0, len(text), 1800):
-                        chunks.append({"chunk_index": i//1800, "text": text[i:i+1800]})
+                        chunks.append(
+                            {"chunk_index": i // 1800, "text": text[i : i + 1800]}
+                        )
                     print(f"     indiacode: {len(chunks)} chunks")
                     return chunks
 
@@ -167,7 +198,13 @@ def fetch_act_indiacode(act_name: str, handle_id: str) -> list[dict]:
 def fetch_act_legislative(act_name: str) -> list[dict]:
     """Fetch act from legislative.gov.in as fallback"""
     chunks = []
-    slug = act_name.lower().replace(" ", "-").replace(",", "").replace("(", "").replace(")", "")
+    slug = (
+        act_name.lower()
+        .replace(" ", "-")
+        .replace(",", "")
+        .replace("(", "")
+        .replace(")", "")
+    )
     url = f"https://legislative.gov.in/actsofparliamentfromtheyear/{slug}"
 
     try:
@@ -178,7 +215,9 @@ def fetch_act_legislative(act_name: str) -> list[dict]:
             text = content.get_text(separator="\n", strip=True)
             if len(text) > 200:
                 for i in range(0, len(text), 1800):
-                    chunks.append({"chunk_index": i//1800, "text": text[i:i+1800]})
+                    chunks.append(
+                        {"chunk_index": i // 1800, "text": text[i : i + 1800]}
+                    )
                 print(f"     legislative.gov.in: {len(chunks)} chunks")
     except Exception as e:
         print(f"    legislative.gov.in failed: {e}")
@@ -204,12 +243,16 @@ def fetch_act_kanoon(act_name: str) -> list[dict]:
                 act_url = "https://indiankanoon.org" + link["href"]
                 ar = requests.get(act_url, timeout=30, headers=HEADERS)
                 asoup = BeautifulSoup(ar.text, "html.parser")
-                content = asoup.find("div", class_="doc_title") or asoup.find("div", {"id": "maindiv"})
+                content = asoup.find("div", class_="doc_title") or asoup.find(
+                    "div", {"id": "maindiv"}
+                )
                 if content:
                     text = content.get_text(separator="\n", strip=True)
                     if len(text) > 200:
                         for i in range(0, len(text), 1800):
-                            chunks.append({"chunk_index": i//1800, "text": text[i:i+1800]})
+                            chunks.append(
+                                {"chunk_index": i // 1800, "text": text[i : i + 1800]}
+                            )
                         print(f"     indiankanoon: {len(chunks)} chunks")
     except Exception as e:
         print(f"    indiankanoon failed: {e}")
@@ -218,9 +261,9 @@ def fetch_act_kanoon(act_name: str) -> list[dict]:
 
 
 def fetch_all_acts():
-    print("\n" + ""*60)
+    print("\n" + "" * 60)
     print("    DOWNLOADING: Central Acts & Laws")
-    print(""*60)
+    print("" * 60)
 
     all_acts = []
     out_path = os.path.join(RAW_DIR, "india_code_acts.json")
@@ -239,13 +282,15 @@ def fetch_all_acts():
             chunks = fetch_act_kanoon(act_name)
 
         if chunks:
-            all_acts.append({
-                "act_name": act_name,
-                "handle_id": handle_id,
-                "sections": chunks,
-                "total_chunks": len(chunks),
-                "total_chars": sum(len(c["text"]) for c in chunks)
-            })
+            all_acts.append(
+                {
+                    "act_name": act_name,
+                    "handle_id": handle_id,
+                    "sections": chunks,
+                    "total_chunks": len(chunks),
+                    "total_chars": sum(len(c["text"]) for c in chunks),
+                }
+            )
         else:
             print(f"     No content retrieved")
 
@@ -255,18 +300,26 @@ def fetch_all_acts():
         json.dump(all_acts, f, ensure_ascii=False, indent=2)
 
     total = sum(a["total_chunks"] for a in all_acts)
-    print(f"\n   Saved {len(all_acts)}/{len(PRIORITY_ACTS)} acts, {total} total chunks → {out_path}")
+    print(
+        f"\n   Saved {len(all_acts)}/{len(PRIORITY_ACTS)} acts, {total} total chunks → {out_path}"
+    )
     return out_path
 
 
 # 3. GOVERNMENT SCHEMES — myscheme.gov.in + Hugging Face
+
 
 def fetch_schemes_huggingface():
     """Download pre-scraped scheme dataset from Hugging Face (no login needed)"""
     print("\n  Trying Hugging Face dataset...")
     try:
         from datasets import load_dataset
-        for ds_id in ["AlokAI/myscheme", "Srini1011/IndianGovernmentSchemes", "varunasthana94/government_schemes"]:
+
+        for ds_id in [
+            "AlokAI/myscheme",
+            "Srini1011/IndianGovernmentSchemes",
+            "varunasthana94/government_schemes",
+        ]:
             try:
                 ds = load_dataset(ds_id, split="train")
                 records = [dict(row) for row in ds]
@@ -324,10 +377,14 @@ def fetch_scheme_detail(slug: str, name: str) -> dict | None:
                 )
                 if isinstance(scheme, dict) and scheme:
                     return {
-                        "scheme_name": scheme.get("name") or scheme.get("schemeName") or name,
+                        "scheme_name": scheme.get("name")
+                        or scheme.get("schemeName")
+                        or name,
                         "scheme_link": url,
                         "slug": slug,
-                        "details": scheme.get("details") or scheme.get("description") or "Not Available",
+                        "details": scheme.get("details")
+                        or scheme.get("description")
+                        or "Not Available",
                         "benefits": scheme.get("benefits") or "Not Available",
                         "eligibility": scheme.get("eligibility") or "Not Available",
                         "application_process": (
@@ -343,7 +400,9 @@ def fetch_scheme_detail(slug: str, name: str) -> dict | None:
                             or "Not Available"
                         ),
                         "tags": scheme.get("tags", []),
-                        "ministry": scheme.get("ministry") or scheme.get("nodal_ministry") or "",
+                        "ministry": scheme.get("ministry")
+                        or scheme.get("nodal_ministry")
+                        or "",
                         "state": scheme.get("state") or "Central",
                     }
             except Exception:
@@ -363,7 +422,10 @@ def fetch_scheme_detail(slug: str, name: str) -> dict | None:
             "eligibility": get_section("eligibility"),
             "application_process": get_section("application-process"),
             "documents_required": get_section("documents-required"),
-            "tags": [t.get_text(strip=True) for t in soup.select("#tags div, .tag-item, .badge")],
+            "tags": [
+                t.get_text(strip=True)
+                for t in soup.select("#tags div, .tag-item, .badge")
+            ],
         }
         return result
 
@@ -372,9 +434,9 @@ def fetch_scheme_detail(slug: str, name: str) -> dict | None:
 
 
 def fetch_all_schemes():
-    print("\n" + ""*60)
+    print("\n" + "" * 60)
     print("    DOWNLOADING: Government Schemes")
-    print(""*60)
+    print("" * 60)
 
     # First try HuggingFace for instant data
     hf = fetch_schemes_huggingface()
@@ -405,7 +467,9 @@ def fetch_all_schemes():
             if meaningful:
                 all_schemes.append(detail)
                 if len(all_schemes) % 25 == 0:
-                    print(f"    [{i+1}/{len(slugs)}]  {len(all_schemes)} valid schemes so far...")
+                    print(
+                        f"    [{i+1}/{len(slugs)}]  {len(all_schemes)} valid schemes so far..."
+                    )
 
         # Checkpoint every 100
         if (i + 1) % 100 == 0:
@@ -426,6 +490,7 @@ def fetch_all_schemes():
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--constitution-only", action="store_true")
     parser.add_argument("--acts-only", action="store_true")

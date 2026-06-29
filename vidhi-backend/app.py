@@ -2,9 +2,11 @@
 VIDHI Backend - FastAPI Application
 Adapted from UdhaviBot with AWS services
 """
+
 import os
+
 # Fix ChromaDB Pydantic v2 compatibility issue
-os.environ['PYDANTIC_SKIP_VALIDATING_CORE_SCHEMAS'] = '1'
+os.environ["PYDANTIC_SKIP_VALIDATING_CORE_SCHEMAS"] = "1"
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,15 +21,17 @@ os.environ["USER_AGENT"] = "Vidhi-Backend-App/1.0"
 
 # Set up structured logging
 from utils.logging_config import setup_logging
+
 setup_logging(
     log_level=os.getenv("LOG_LEVEL", "INFO"),
-    json_format=os.getenv("LOG_FORMAT", "json") == "json"
+    json_format=os.getenv("LOG_FORMAT", "json") == "json",
 )
 logger = logging.getLogger(__name__)
 
 # Import monitoring service (optional)
 try:
     from utils.monitoring import monitoring
+
     MONITORING_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Monitoring not available: {e}")
@@ -35,15 +39,12 @@ except ImportError as e:
     monitoring = None
 
 # Import cache utilities
-from utils.cache import (
-    get_cached_llm_response,
-    cache_llm_response,
-    cleanup_all_caches
-)
+from utils.cache import get_cached_llm_response, cache_llm_response, cleanup_all_caches
 
 # Import scheduler utilities (optional)
 try:
     from utils.scheduler import start_scheduler, stop_scheduler
+
     SCHEDULER_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Scheduler not available: {e}")
@@ -60,6 +61,7 @@ from utils.input_sanitization import sanitize_api_input, check_content_safety
 # Try to import optional services - gracefully handle missing dependencies
 try:
     from llm_setup.bedrock_setup import BedrockLLMService, EmergencyLLMService
+
     BEDROCK_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Bedrock LLM not available: {e}")
@@ -69,6 +71,7 @@ except ImportError as e:
 
 try:
     from speech.aws_transcribe import AWSTranscribeService, HybridSpeechToText
+
     TRANSCRIBE_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"AWS Transcribe not available: {e}")
@@ -77,6 +80,7 @@ except ImportError as e:
 
 try:
     from speech.aws_polly import AWSPollyService, CachedPollyService
+
     POLLY_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"AWS Polly not available: {e}")
@@ -86,6 +90,7 @@ except ImportError as e:
 
 try:
     from speech.bhashini import BhashiniService
+
     BHASHINI_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Bhashini not available: {e}")
@@ -93,7 +98,11 @@ except ImportError as e:
     BhashiniService = None
 
 try:
-    from processing.documents import load_json_to_langchain_document_schema, create_scheme_documents
+    from processing.documents import (
+        load_json_to_langchain_document_schema,
+        create_scheme_documents,
+    )
+
     DOCUMENT_PROCESSING_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Document processing not available: {e}")
@@ -102,10 +111,12 @@ except ImportError as e:
 try:
     # ChromaDB not compatible with Python 3.14+
     import sys
+
     if sys.version_info >= (3, 14):
         raise ImportError("ChromaDB not compatible with Python 3.14+")
-    
+
     from stores.chroma import store_embeddings, load_vectorstore, create_retriever
+
     CHROMA_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"ChromaDB not available: {e}")
@@ -113,6 +124,7 @@ except ImportError as e:
 
 try:
     from services.document_education import document_education_service
+
     DOCUMENT_EDUCATION_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Document education service not available: {e}")
@@ -121,6 +133,7 @@ except ImportError as e:
 
 try:
     from services.chat_history import chat_history_service
+
     CHAT_HISTORY_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Chat history service not available: {e}")
@@ -130,13 +143,16 @@ except ImportError as e:
 app = FastAPI(
     title="VIDHI API",
     description="Voice-Integrated Defense for Holistic Inclusion - AI Legal Assistant",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 # For AWS Lambda deployment
 try:
     from mangum import Mangum
-    handler = Mangum(app, text_mime_types=[app.openapi_url, "application/json", "text/plain"])
+
+    handler = Mangum(
+        app, text_mime_types=[app.openapi_url, "application/json", "text/plain"]
+    )
 except ImportError:
     handler = None
 
@@ -154,7 +170,7 @@ app.add_middleware(
     allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"]
+    allow_headers=["*"],
 )
 
 # ── Middleware ───────────────────────────────────────────────────────────────
@@ -171,15 +187,16 @@ from middleware.sanitization_middleware import InputSanitizationMiddleware
 from middleware.auth_middleware import AuthMiddleware
 from middleware.rate_limit_middleware import RateLimitMiddleware
 
-app.add_middleware(RateLimitMiddleware)      # innermost: runs last, after auth
+app.add_middleware(RateLimitMiddleware)  # innermost: runs last, after auth
 app.add_middleware(AuthMiddleware)
 app.add_middleware(InputSanitizationMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
-app.add_middleware(ErrorHandlerMiddleware)   # outermost: runs first, wraps all
+app.add_middleware(ErrorHandlerMiddleware)  # outermost: runs first, wraps all
 
 
 # Update log level from config (overrides the early INFO default)
 logging.getLogger().setLevel(getattr(logging, config.LOG_LEVEL))
+
 
 # Additional Pydantic models
 class DocumentEducationRequest(BaseModel):
@@ -187,16 +204,19 @@ class DocumentEducationRequest(BaseModel):
     document_type: str  # rental_agreement, loan_contract, employment_contract, etc.
     language: str = "english"
 
+
 class ClauseExplanationRequest(BaseModel):
     clause_text: str
     document_context: str
     language: str = "english"
     user_profile: Optional[dict] = None
 
+
 class TermDefinitionRequest(BaseModel):
     term: str
     language: str = "english"
     context: Optional[str] = None
+
 
 class InteractiveQARequest(BaseModel):
     question: str
@@ -204,15 +224,18 @@ class InteractiveQARequest(BaseModel):
     conversation_history: list = []
     language: str = "english"
 
+
 class TeachingSessionRequest(BaseModel):
     document_text: str
     document_type: str
     language: str = "english"
 
+
 class MessagePlaybackRequest(BaseModel):
     chat_id: str
     message_id: str
     regenerate: bool = False
+
 
 # Initialize services
 embeddings = None
@@ -224,6 +247,7 @@ transcribe_service = None
 polly_service = None
 bhashini_service = None
 
+
 class ChatRequest(BaseModel):
     text: Optional[str] = None
     language: str = "hindi"
@@ -231,11 +255,13 @@ class ChatRequest(BaseModel):
     use_aws_stt: bool = False
     session_id: str = "default"  # Unique per browser tab/conversation
 
+
 class ChatResponse(BaseModel):
     response: str
     audio_url: Optional[str] = None
     language: str
     from_cache: bool = False
+
 
 class EmergencyRequest(BaseModel):
     situation: str
@@ -248,10 +274,12 @@ async def startup_event():
     """Initialize services on startup"""
     global embeddings, vectorstore, retriever, llm_service, emergency_llm
     global transcribe_service, polly_service, bhashini_service
-    
+
     logger.info("Starting VIDHI backend...")
-    logger.info(f"Available services: Bedrock={BEDROCK_AVAILABLE}, Chroma={CHROMA_AVAILABLE}, Transcribe={TRANSCRIBE_AVAILABLE}, Polly={POLLY_AVAILABLE}")
-    
+    logger.info(
+        f"Available services: Bedrock={BEDROCK_AVAILABLE}, Chroma={CHROMA_AVAILABLE}, Transcribe={TRANSCRIBE_AVAILABLE}, Polly={POLLY_AVAILABLE}"
+    )
+
     # Initialize monitoring (Sentry)
     if MONITORING_AVAILABLE and monitoring:
         try:
@@ -261,7 +289,7 @@ async def startup_event():
             logger.warning(f"Failed to initialize monitoring: {e}")
     else:
         logger.info("Monitoring not available (install sentry-sdk to enable)")
-    
+
     # Start data refresh scheduler
     if SCHEDULER_AVAILABLE and start_scheduler:
         try:
@@ -271,7 +299,7 @@ async def startup_event():
             logger.warning(f"Failed to start scheduler: {e}")
     else:
         logger.info("Scheduler not available (install APScheduler to enable)")
-    
+
     try:
         # Initialize embeddings (only if Chroma is available)
         if CHROMA_AVAILABLE:
@@ -279,63 +307,74 @@ async def startup_event():
             embeddings = config.get_embeddings()
         else:
             logger.warning("Skipping embeddings - ChromaDB not available")
-        
+
         # Load or create vector store (only if Chroma is available)
         if CHROMA_AVAILABLE and embeddings:
             logger.info("Loading vector store...")
             vectorstore = load_vectorstore(embeddings)
-            
+
             if vectorstore is None:
                 logger.info("Vector store not found, creating new one...")
-                
+
                 # Check if schemes data exists
-                if os.path.exists(config.SCHEMES_JSON_PATH) and DOCUMENT_PROCESSING_AVAILABLE:
+                if (
+                    os.path.exists(config.SCHEMES_JSON_PATH)
+                    and DOCUMENT_PROCESSING_AVAILABLE
+                ):
                     logger.info(f"Loading schemes from {config.SCHEMES_JSON_PATH}")
-                    
+
                     # Load schemes data
                     import json
-                    with open(config.SCHEMES_JSON_PATH, 'r', encoding='utf-8') as f:
+
+                    with open(config.SCHEMES_JSON_PATH, "r", encoding="utf-8") as f:
                         schemes_data = json.load(f)
-                    
+
                     # Create documents
                     documents = create_scheme_documents(schemes_data)
                     logger.info(f"Created {len(documents)} scheme documents")
-                    
+
                     # Store embeddings
                     vectorstore = store_embeddings(documents, embeddings)
                     logger.info("Vector store created successfully")
                 else:
                     if not os.path.exists(config.SCHEMES_JSON_PATH):
-                        logger.warning(f"Schemes file not found: {config.SCHEMES_JSON_PATH}")
-                        logger.warning("Run data_pipeline/fetch_schemes.py to download government schemes data")
+                        logger.warning(
+                            f"Schemes file not found: {config.SCHEMES_JSON_PATH}"
+                        )
+                        logger.warning(
+                            "Run data_pipeline/fetch_schemes.py to download government schemes data"
+                        )
                     if not DOCUMENT_PROCESSING_AVAILABLE:
                         logger.warning("Document processing not available")
         else:
-            logger.warning("Skipping vector store - ChromaDB or embeddings not available")
-        
+            logger.warning(
+                "Skipping vector store - ChromaDB or embeddings not available"
+            )
+
         # Create retriever (only if vectorstore exists)
         if vectorstore and CHROMA_AVAILABLE:
             retriever = create_retriever(vectorstore)
             logger.info("Retriever created successfully")
-            
+
         # Initialize LLM service (only if Bedrock is available)
         if BEDROCK_AVAILABLE:
             logger.info("Initializing Bedrock LLM service...")
             llm_service = BedrockLLMService(logger, retriever)
-            
+
             if llm_service.error:
                 logger.error(f"LLM service initialization error: {llm_service.error}")
             else:
                 logger.info("LLM service initialized successfully")
-                
+
                 # Set LLM service for streaming routes (Phase 2)
                 try:
                     from routes.streaming_routes import set_llm_service
+
                     set_llm_service(llm_service)
                     logger.info("LLM service set for streaming routes")
                 except ImportError:
                     logger.debug("Streaming routes not available yet")
-                
+
                 # Set services for WebSocket routes (Phase 2 Week 2)
                 if set_services and transcribe_service and polly_service:
                     try:
@@ -345,45 +384,49 @@ async def startup_event():
                         logger.warning(f"Failed to set WebSocket services: {e}")
         else:
             logger.warning("Skipping LLM service - Bedrock not available")
-        
+
         # Initialize emergency LLM (only if Bedrock is available)
         if BEDROCK_AVAILABLE:
             logger.info("Initializing emergency LLM...")
             emergency_llm = EmergencyLLMService(logger)
         else:
             logger.warning("Skipping emergency LLM - Bedrock not available")
-        
+
         # Initialize speech services
         if config.ENABLE_VOICE_INPUT:
             logger.info("Initializing speech services...")
-            
+
             if TRANSCRIBE_AVAILABLE:
                 transcribe_service = AWSTranscribeService(region=config.AWS_REGION)
             else:
                 logger.warning("AWS Transcribe not available")
-            
+
             if POLLY_AVAILABLE:
                 polly_service = AWSPollyService(region=config.AWS_REGION)
-                
+
                 # Initialize CDN service for audio delivery
                 try:
                     from services.cdn_service import CDNService
+
                     cdn_service = CDNService(region=config.AWS_REGION)
-                    logger.info(f"CDN service initialized (enabled: {cdn_service.is_enabled()})")
+                    logger.info(
+                        f"CDN service initialized (enabled: {cdn_service.is_enabled()})"
+                    )
                 except Exception as e:
                     logger.warning(f"CDN service initialization failed: {e}")
                     cdn_service = None
-                
+
                 # Wrap Polly with caching and CDN
-                polly_service = CachedPollyService(polly_service, config.S3_BUCKET_AUDIO, cdn_service)
+                polly_service = CachedPollyService(
+                    polly_service, config.S3_BUCKET_AUDIO, cdn_service
+                )
             else:
                 logger.warning("AWS Polly not available")
-            
+
             # Initialize Bhashini for dialects
             if BHASHINI_AVAILABLE and config.BHASHINI_API_KEY:
                 bhashini_service = BhashiniService(
-                    api_key=config.BHASHINI_API_KEY,
-                    user_id=config.BHASHINI_USER_ID
+                    api_key=config.BHASHINI_API_KEY, user_id=config.BHASHINI_USER_ID
                 )
                 logger.info("Bhashini service initialized")
             else:
@@ -391,9 +434,11 @@ async def startup_event():
                     logger.warning("Bhashini module not available")
                 else:
                     logger.warning("Bhashini API key not configured")
-        
+
         logger.info("VIDHI backend started successfully!")
-        logger.info("Note: Some features may be limited due to missing optional dependencies")
+        logger.info(
+            "Note: Some features may be limited due to missing optional dependencies"
+        )
         logger.info("To enable all features, install: pip install -r requirements.txt")
 
     except Exception as e:
@@ -410,7 +455,7 @@ async def startup_event():
 async def shutdown_event():
     """Cleanup on shutdown"""
     logger.info("Shutting down VIDHI backend...")
-    
+
     # Stop scheduler
     if SCHEDULER_AVAILABLE and stop_scheduler:
         try:
@@ -418,14 +463,14 @@ async def shutdown_event():
             logger.info("Scheduler stopped")
         except Exception as e:
             logger.warning(f"Error stopping scheduler: {e}")
-    
+
     # Cleanup caches
     try:
         cleanup_all_caches()
         logger.info("Caches cleaned up")
     except Exception as e:
         logger.warning(f"Error cleaning up caches: {e}")
-    
+
     logger.info("VIDHI backend shutdown complete")
 
 
@@ -439,6 +484,7 @@ async def shutdown_event():
 # Include cache management routes
 try:
     from routes.cache_routes import router as cache_router
+
     app.include_router(cache_router)
     logger.info("Cache routes registered")
 except ImportError as e:
@@ -447,6 +493,7 @@ except ImportError as e:
 # Include scheduler routes
 try:
     from routes.scheduler_routes import router as scheduler_router
+
     app.include_router(scheduler_router)
     logger.info("Scheduler routes registered")
 except ImportError as e:
@@ -455,6 +502,7 @@ except ImportError as e:
 # Include streaming routes (Phase 2)
 try:
     from routes.streaming_routes import router as streaming_router
+
     app.include_router(streaming_router)
     logger.info("Streaming routes registered")
 except ImportError as e:
@@ -463,6 +511,7 @@ except ImportError as e:
 # Include WebSocket routes (Phase 2 Week 2)
 try:
     from routes.websocket_routes import router as websocket_router, set_services
+
     app.include_router(websocket_router)
     logger.info("WebSocket routes registered")
 except ImportError as e:
@@ -472,6 +521,7 @@ except ImportError as e:
 # Include task management routes (Phase 3)
 try:
     from routes.task_routes import router as task_router
+
     app.include_router(task_router)
     logger.info("Task management routes registered")
 except ImportError as e:
@@ -480,6 +530,7 @@ except ImportError as e:
 # Include CDN management routes (Phase 3)
 try:
     from routes.cdn_routes import router as cdn_router
+
     app.include_router(cdn_router)
     logger.info("CDN management routes registered")
 except ImportError as e:
@@ -496,8 +547,8 @@ async def root():
         "features": {
             "voice_input": config.ENABLE_VOICE_INPUT,
             "document_analysis": config.ENABLE_DOCUMENT_ANALYSIS,
-            "scheme_matching": config.ENABLE_SCHEME_MATCHING
-        }
+            "scheme_matching": config.ENABLE_SCHEME_MATCHING,
+        },
     }
 
 
@@ -511,8 +562,8 @@ async def health_check():
             "vectorstore": vectorstore is not None,
             "transcribe": transcribe_service is not None,
             "polly": polly_service is not None,
-            "bhashini": bhashini_service is not None
-        }
+            "bhashini": bhashini_service is not None,
+        },
     }
 
 
@@ -534,140 +585,160 @@ async def chat(
         sanitized = sanitize_api_input(
             text=text,
             session_id=session_id,
-            language=language_code.split('-')[0] if language_code else None
+            language=language_code.split("-")[0] if language_code else None,
         )
-        
+
         # Check content safety
-        if not sanitized.get('is_safe', True):
+        if not sanitized.get("is_safe", True):
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid input: {sanitized.get('safety_reason', 'Content safety check failed')}"
+                detail=f"Invalid input: {sanitized.get('safety_reason', 'Content safety check failed')}",
             )
-        
+
         # Use sanitized values
-        text = sanitized.get('text', text)
-        session_id = sanitized.get('session_id', session_id)
-        
+        text = sanitized.get("text", text)
+        session_id = sanitized.get("session_id", session_id)
+
         # Sanitize filenames
         for file in files:
-            if hasattr(file, 'filename') and file.filename:
+            if hasattr(file, "filename") and file.filename:
                 from utils.input_sanitization import sanitize_filename
+
                 file.filename = sanitize_filename(file.filename)
-        
+
         user_input = None
-        
+
         if files and len(files) > 0:
             extracted_texts = []
             audio_processed = False
-            
+
             for file in files:
                 logger.info(f"Processing uploaded file: {file.filename}")
-                
+
                 # Check if file has an actual filename (some frameworks send empty files for empty arrays)
                 if not getattr(file, "filename", None):
                     continue
-                    
+
                 # Read file data
                 file_data = await file.read()
                 mime_type = file.content_type
-                
-                # Check if it's an audio file
-                is_audio = (mime_type and mime_type.startswith('audio/')) or (file.filename and file.filename.lower().endswith(('.wav', '.mp3', '.m4a', '.ogg', '.webm')))
 
-                
+                # Check if it's an audio file
+                is_audio = (mime_type and mime_type.startswith("audio/")) or (
+                    file.filename
+                    and file.filename.lower().endswith(
+                        (".wav", ".mp3", ".m4a", ".ogg", ".webm")
+                    )
+                )
+
                 if is_audio and not audio_processed:
                     # Only process the first audio file as voice input
                     audio_processed = True
                     # Use hybrid STT (browser first, AWS fallback)
                     if not use_aws_stt and config.USE_BROWSER_STT_FIRST:
-                        return JSONResponse({
-                            "use_browser_stt": True,
-                            "message": "Please use browser speech recognition",
-                            "supported_languages": config.TRANSCRIBE_SUPPORTED_LANGUAGES
-                        })
-                    
+                        return JSONResponse(
+                            {
+                                "use_browser_stt": True,
+                                "message": "Please use browser speech recognition",
+                                "supported_languages": config.TRANSCRIBE_SUPPORTED_LANGUAGES,
+                            }
+                        )
+
                     # Use AWS Transcribe
                     if transcribe_service:
                         # Detect media format from filename extension
                         fname = file.filename.lower()
-                        if fname.endswith('.webm'):
-                            media_format = 'webm'
-                        elif fname.endswith('.ogg'):
-                            media_format = 'ogg'
-                        elif fname.endswith('.mp4') or fname.endswith('.m4a'):
-                            media_format = 'mp4'
-                        elif fname.endswith('.mp3'):
-                            media_format = 'mp3'
-                        elif fname.endswith('.flac'):
-                            media_format = 'flac'
+                        if fname.endswith(".webm"):
+                            media_format = "webm"
+                        elif fname.endswith(".ogg"):
+                            media_format = "ogg"
+                        elif fname.endswith(".mp4") or fname.endswith(".m4a"):
+                            media_format = "mp4"
+                        elif fname.endswith(".mp3"):
+                            media_format = "mp3"
+                        elif fname.endswith(".flac"):
+                            media_format = "flac"
                         else:
-                            media_format = 'wav'
+                            media_format = "wav"
 
                         # Upload to S3 and transcribe
                         timestamp = int(time.time())
                         s3_key = f"transcribe-input/{timestamp}.{media_format}"
                         s3_uri = transcribe_service.upload_audio_to_s3(
-                            file_data,
-                            config.S3_BUCKET_AUDIO,
-                            s3_key
+                            file_data, config.S3_BUCKET_AUDIO, s3_key
                         )
-                        
+
                         result = transcribe_service.transcribe_audio(
                             s3_uri,
                             language_code,
                             identify_language=False,
-                            media_format=media_format
+                            media_format=media_format,
                         )
 
-                        
-                        if result['success']:
+                        if result["success"]:
                             # Using audio transcript as the main text
-                            user_input = result['transcript']
-                            language_code = result['language_code']
-                            logger.info(f"Transcribed: {user_input[:50] if user_input else 'empty'}...")
+                            user_input = result["transcript"]
+                            language_code = result["language_code"]
+                            logger.info(
+                                f"Transcribed: {user_input[:50] if user_input else 'empty'}..."
+                            )
                         else:
-                            raise HTTPException(status_code=500, detail=result['error'])
+                            raise HTTPException(status_code=500, detail=result["error"])
                     else:
                         # AWS Transcribe is not configured — return graceful AI response
-                        logger.warning("Transcribe service not available, returning fallback response")
-                        return JSONResponse({
-                            "response": "I received your voice message, but voice transcription (AWS Transcribe) is not currently configured on this server. Please type your question instead, or ask the administrator to set up AWS Transcribe.",
-                            "audio_url": None,
-                            "language": language,
-                            "from_cache": False
-                        })
+                        logger.warning(
+                            "Transcribe service not available, returning fallback response"
+                        )
+                        return JSONResponse(
+                            {
+                                "response": "I received your voice message, but voice transcription (AWS Transcribe) is not currently configured on this server. Please type your question instead, or ask the administrator to set up AWS Transcribe.",
+                                "audio_url": None,
+                                "language": language,
+                                "from_cache": False,
+                            }
+                        )
 
-                
                 # If it's a document (PDF, DOCX, TXT, Image)
                 elif not is_audio:
                     try:
                         import io
+
                         doc_text = ""
-                        
-                        if file.filename.lower().endswith('.pdf'):
+
+                        if file.filename.lower().endswith(".pdf"):
                             import PyPDF2
+
                             pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_data))
                             for page in pdf_reader.pages:
                                 doc_text += page.extract_text() + "\n"
-                        
-                        elif file.filename.lower().endswith('.docx'):
+
+                        elif file.filename.lower().endswith(".docx"):
                             import docx
+
                             doc = docx.Document(io.BytesIO(file_data))
-                            doc_text = "\n".join([paragraph.text for paragraph in doc.paragraphs])
-                        
-                        elif file.filename.lower().endswith('.txt'):
-                            doc_text = file_data.decode('utf-8')
-                            
+                            doc_text = "\n".join(
+                                [paragraph.text for paragraph in doc.paragraphs]
+                            )
+
+                        elif file.filename.lower().endswith(".txt"):
+                            doc_text = file_data.decode("utf-8")
+
                         else:
                             doc_text = f"[User attached a file named {file.filename} but text extraction for this format is currently limited.]"
-                        
-                        extracted_texts.append(f"--- Document: {file.filename} ---\n{doc_text[:4000]}...")
+
+                        extracted_texts.append(
+                            f"--- Document: {file.filename} ---\n{doc_text[:4000]}..."
+                        )
                         logger.info(f"Extracted document text from {file.filename}")
-                        
+
                     except Exception as e:
-                        logger.error(f"Error parsing document {file.filename}: {str(e)}")
-                        extracted_texts.append(f"--- Document: {file.filename} ---\n[Error extracting text]")
-            
+                        logger.error(
+                            f"Error parsing document {file.filename}: {str(e)}"
+                        )
+                        extracted_texts.append(
+                            f"--- Document: {file.filename} ---\n[Error extracting text]"
+                        )
+
             # Combine all document texts
             if extracted_texts:
                 combined_docs = "\n\n".join(extracted_texts)
@@ -675,17 +746,19 @@ async def chat(
                 if not base_text:
                     base_text = "Please analyze the attached document(s)."
                 user_input = f"{base_text}\n\n[Attached Documents Content Start]\n{combined_docs}\n[Attached Documents Content End]"
-                    
+
         # Handle text input without file
         elif text is not None and str(text).strip():
             user_input = text
 
         elif use_aws_stt:
             user_input = "I received a voice message but it was empty or could not be processed. Please try again."
-            
+
         else:
-            raise HTTPException(status_code=400, detail="Either text or audio file is required")
-        
+            raise HTTPException(
+                status_code=400, detail="Either text or audio file is required"
+            )
+
         # Safety guard — ensure user_input is never None at this point
         if not user_input or not str(user_input).strip():
             if text is not None and str(text).strip():
@@ -693,49 +766,55 @@ async def chat(
             elif files and len(files) > 0 and is_audio:
                 user_input = "The voice recording I received was completely silent or unclear. Please politely tell the user that you couldn't hear them and ask them to check their microphone and try speaking again."
             elif files and len(files) > 0:
-                user_input = "Could not recognize any valid text in the provided documents."
+                user_input = (
+                    "Could not recognize any valid text in the provided documents."
+                )
             elif use_aws_stt:
                 user_input = "The voice recording I received was completely silent or unclear. Please politely tell the user that you couldn't hear them and ask them to check their microphone and try speaking again."
             else:
-                raise HTTPException(status_code=400, detail="Either text or audio file is required")
+                raise HTTPException(
+                    status_code=400, detail="Either text or audio file is required"
+                )
 
         # Query LLM with RAG
         if not llm_service or llm_service.error:
             raise HTTPException(status_code=503, detail="LLM service not available")
-        
+
         logger.info(f"Querying LLM [session={session_id}]: {user_input[:50]}...")
         llm_start_time = time.time()
-        
+
         # Check cache first
         cache_key = f"{session_id}:{user_input}"
         cached_response = get_cached_llm_response(cache_key)
-        
+
         if cached_response:
             logger.info(f"Cache HIT for session {session_id}")
             ai_response = cached_response
             from_cache = True
         else:
             # Cache miss - query LLM
-            ai_response = llm_service.query(user_input, session_id=session_id, language=language)
-            
+            ai_response = llm_service.query(
+                user_input, session_id=session_id, language=language
+            )
+
             # Cache the response
             cache_llm_response(cache_key, ai_response, ttl=3600)  # 1 hour TTL
             from_cache = False
-        
+
         logger.info(f"LLM completed in {time.time() - llm_start_time:.2f} seconds")
 
         # Generate voice output
         # Skip synchronous voice generation for faster chat response
         # The frontend will fetch the audio via the playback endpoint or browser TTS
         audio_url = None
-        
+
         return ChatResponse(
             response=ai_response,
             audio_url=audio_url,
             language=language,
-            from_cache=from_cache
+            from_cache=from_cache,
         )
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -754,6 +833,7 @@ async def clear_session(session_id: str):
         return {"status": "cleared", "session_id": session_id}
     return {"status": "no_service", "session_id": session_id}
 
+
 @app.post("/emergency")
 async def emergency(request: EmergencyRequest):
     """
@@ -762,34 +842,34 @@ async def emergency(request: EmergencyRequest):
     """
     try:
         if not emergency_llm:
-            raise HTTPException(status_code=503, detail="Emergency service not available")
-        
+            raise HTTPException(
+                status_code=503, detail="Emergency service not available"
+            )
+
         logger.info(f"Emergency request: {request.situation[:50]}...")
-        
+
         # Get emergency rights information
         rights_info = emergency_llm.get_emergency_rights(
-            request.situation,
-            request.language
+            request.situation, request.language
         )
-        
+
         # Generate voice output
         audio_url = None
         if polly_service:
             tts_result = polly_service.get_or_create_audio(
-                rights_info,
-                request.language_code
+                rights_info, request.language_code
             )
-            
-            if tts_result['success']:
-                audio_url = tts_result['audio_url']
-        
+
+            if tts_result["success"]:
+                audio_url = tts_result["audio_url"]
+
         return {
             "response": rights_info,
             "audio_url": audio_url,
             "emergency_contacts": config.EMERGENCY_CONTACTS,
-            "language": request.language
+            "language": request.language,
         }
-    
+
     except Exception as e:
         logger.error(f"Error in emergency endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -801,12 +881,15 @@ async def get_supported_languages():
     return {
         "aws_transcribe": config.TRANSCRIBE_SUPPORTED_LANGUAGES,
         "aws_polly": list(config.POLLY_VOICE_MAP.keys()),
-        "bhashini": bhashini_service.get_supported_languages() if bhashini_service else {}
+        "bhashini": (
+            bhashini_service.get_supported_languages() if bhashini_service else {}
+        ),
     }
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
 
@@ -814,30 +897,32 @@ if __name__ == "__main__":
 # DOCUMENT EDUCATION ENDPOINTS
 # ============================================================================
 
+
 @app.post("/api/v1/documents/simplify")
 async def simplify_document(request: DocumentEducationRequest):
     """
     Simplify a legal document with section-by-section explanations
-    
+
     This endpoint breaks down complex legal documents into understandable sections,
     providing simplified explanations, key points, and warnings.
     """
     if not document_education_service:
-        raise HTTPException(status_code=503, detail="Document education service not available")
+        raise HTTPException(
+            status_code=503, detail="Document education service not available"
+        )
     try:
-        logger.info(f"Simplifying {request.document_type} document in {request.language}")
+        logger.info(
+            f"Simplifying {request.document_type} document in {request.language}"
+        )
 
         result = document_education_service.simplify_document(
             document_text=request.document_text,
             document_type=request.document_type,
-            language=request.language
+            language=request.language,
         )
-        
-        return JSONResponse(content={
-            "status": "success",
-            "data": result
-        })
-        
+
+        return JSONResponse(content={"status": "success", "data": result})
+
     except Exception as e:
         logger.error(f"Error simplifying document: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -847,27 +932,26 @@ async def simplify_document(request: DocumentEducationRequest):
 async def explain_clause(request: ClauseExplanationRequest):
     """
     Explain a specific clause in detail with personalized examples
-    
+
     Provides detailed explanation of a clause with real-world examples
     tailored to the user's context.
     """
     if not document_education_service:
-        raise HTTPException(status_code=503, detail="Document education service not available")
+        raise HTTPException(
+            status_code=503, detail="Document education service not available"
+        )
     try:
         logger.info(f"Explaining clause in {request.language}")
-        
+
         result = document_education_service.explain_clause(
             clause_text=request.clause_text,
             document_context=request.document_context,
             language=request.language,
-            user_profile=request.user_profile
+            user_profile=request.user_profile,
         )
-        
-        return JSONResponse(content={
-            "status": "success",
-            "data": result
-        })
-        
+
+        return JSONResponse(content={"status": "success", "data": result})
+
     except Exception as e:
         logger.error(f"Error explaining clause: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -877,26 +961,23 @@ async def explain_clause(request: ClauseExplanationRequest):
 async def define_term(request: TermDefinitionRequest):
     """
     Define a legal term with simple explanations and examples
-    
+
     Provides definitions from the legal glossary or generates explanations
     for terms not in the glossary.
     """
     if not document_education_service:
-        raise HTTPException(status_code=503, detail="Document education service not available")
+        raise HTTPException(
+            status_code=503, detail="Document education service not available"
+        )
     try:
         logger.info(f"Defining term '{request.term}' in {request.language}")
-        
+
         result = document_education_service.define_term(
-            term=request.term,
-            language=request.language,
-            context=request.context
+            term=request.term, language=request.language, context=request.context
         )
-        
-        return JSONResponse(content={
-            "status": "success",
-            "data": result
-        })
-        
+
+        return JSONResponse(content={"status": "success", "data": result})
+
     except Exception as e:
         logger.error(f"Error defining term: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -906,31 +987,35 @@ async def define_term(request: TermDefinitionRequest):
 async def interactive_qa(request: InteractiveQARequest):
     """
     Answer user questions about a document interactively
-    
+
     Maintains conversation context to provide helpful answers about
     specific aspects of the document.
     """
     if not document_education_service:
-        raise HTTPException(status_code=503, detail="Document education service not available")
+        raise HTTPException(
+            status_code=503, detail="Document education service not available"
+        )
     try:
         logger.info(f"Interactive Q&A in {request.language}")
-        
+
         answer = document_education_service.interactive_qa(
             question=request.question,
             document_text=request.document_text,
             conversation_history=request.conversation_history,
-            language=request.language
+            language=request.language,
         )
-        
-        return JSONResponse(content={
-            "status": "success",
-            "data": {
-                "question": request.question,
-                "answer": answer,
-                "language": request.language
+
+        return JSONResponse(
+            content={
+                "status": "success",
+                "data": {
+                    "question": request.question,
+                    "answer": answer,
+                    "language": request.language,
+                },
             }
-        })
-        
+        )
+
     except Exception as e:
         logger.error(f"Error in interactive Q&A: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -940,26 +1025,27 @@ async def interactive_qa(request: InteractiveQARequest):
 async def create_teaching_session(request: TeachingSessionRequest):
     """
     Create a structured teaching session for a document
-    
+
     Generates a step-by-step interactive teaching session to help users
     understand the document thoroughly.
     """
     if not document_education_service:
-        raise HTTPException(status_code=503, detail="Document education service not available")
+        raise HTTPException(
+            status_code=503, detail="Document education service not available"
+        )
     try:
-        logger.info(f"Creating teaching session for {request.document_type} in {request.language}")
-        
+        logger.info(
+            f"Creating teaching session for {request.document_type} in {request.language}"
+        )
+
         result = document_education_service.generate_teaching_session(
             document_text=request.document_text,
             document_type=request.document_type,
-            language=request.language
+            language=request.language,
         )
-        
-        return JSONResponse(content={
-            "status": "success",
-            "data": result
-        })
-        
+
+        return JSONResponse(content={"status": "success", "data": result})
+
     except Exception as e:
         logger.error(f"Error creating teaching session: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -968,6 +1054,7 @@ async def create_teaching_session(request: TeachingSessionRequest):
 # ============================================================================
 # LANGUAGE-PRESERVED VOICE HISTORY ENDPOINTS
 # ============================================================================
+
 
 @app.post("/api/v1/history/save-message")
 async def save_message(
@@ -979,24 +1066,26 @@ async def save_message(
     language_name: str = Form(...),
     dialect: Optional[str] = Form(None),
     input_mode: str = Form("text"),
-    audio_file: Optional[UploadFile] = File(None)
+    audio_file: Optional[UploadFile] = File(None),
 ):
     """
     Save a message with language metadata for future playback
-    
+
     Stores messages with complete language information to enable
     accurate voice playback in the original language/dialect.
     """
     if not chat_history_service:
-        raise HTTPException(status_code=503, detail="Chat history service not available")
+        raise HTTPException(
+            status_code=503, detail="Chat history service not available"
+        )
     try:
         logger.info(f"Saving message for user {user_id} in {language_name}")
-        
+
         # Read audio data if provided
         audio_data = None
         if audio_file:
             audio_data = await audio_file.read()
-        
+
         message = chat_history_service.save_message(
             user_id=user_id,
             chat_id=chat_id,
@@ -1006,14 +1095,11 @@ async def save_message(
             language_name=language_name,
             dialect=dialect,
             input_mode=input_mode,
-            audio_data=audio_data
+            audio_data=audio_data,
         )
-        
-        return JSONResponse(content={
-            "status": "success",
-            "data": message
-        })
-        
+
+        return JSONResponse(content={"status": "success", "data": message})
+
     except Exception as e:
         logger.error(f"Error saving message: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1023,67 +1109,64 @@ async def save_message(
 async def get_chat_history(chat_id: str, limit: Optional[int] = None):
     """
     Retrieve chat history for a session
-    
+
     Returns all messages in a chat session with language metadata.
     """
     if not chat_history_service:
-        raise HTTPException(status_code=503, detail="Chat history service not available")
+        raise HTTPException(
+            status_code=503, detail="Chat history service not available"
+        )
     try:
         logger.info(f"Retrieving chat history for {chat_id}")
-        
+
         messages = chat_history_service.get_chat_history(chat_id, limit)
-        
-        return JSONResponse(content={
-            "status": "success",
-            "data": {
-                "chat_id": chat_id,
-                "message_count": len(messages),
-                "messages": messages
+
+        return JSONResponse(
+            content={
+                "status": "success",
+                "data": {
+                    "chat_id": chat_id,
+                    "message_count": len(messages),
+                    "messages": messages,
+                },
             }
-        })
-        
+        )
+
     except Exception as e:
         logger.error(f"Error retrieving chat history: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/v1/history/{chat_id}/playback")
-async def get_message_playback(
-    chat_id: str,
-    message_id: str,
-    regenerate: bool = False
-):
+async def get_message_playback(chat_id: str, message_id: str, regenerate: bool = False):
     """
     Get audio playback for a specific message in its original language
-    
+
     This is the critical endpoint that enables language-preserved voice playback.
     When you replay a Bhojpuri message from 3 days ago, it plays in Bhojpuri,
     not standard Hindi.
-    
+
     Args:
         chat_id: Chat session identifier
         message_id: Specific message to play back
         regenerate: Force regeneration of audio instead of using cache
-        
+
     Returns:
         Audio URL with playback metadata
     """
     if not chat_history_service:
-        raise HTTPException(status_code=503, detail="Chat history service not available")
+        raise HTTPException(
+            status_code=503, detail="Chat history service not available"
+        )
     try:
         logger.info(f"Getting playback for message {message_id} in chat {chat_id}")
-        
+
         playback_data = chat_history_service.get_message_playback(
-            chat_id=chat_id,
-            message_id=message_id,
-            regenerate=regenerate
+            chat_id=chat_id, message_id=message_id, regenerate=regenerate
         )
-        
-        return JSONResponse(content={
-            "status": "success",
-            "data": playback_data
-        })
-        
+
+        return JSONResponse(content={"status": "success", "data": playback_data})
+
     except ValueError as e:
         logger.error(f"Message not found: {str(e)}")
         raise HTTPException(status_code=404, detail=str(e))
@@ -1096,47 +1179,68 @@ async def get_message_playback(
 async def get_supported_languages():
     """
     Get list of supported languages with TTS engine information
-    
+
     Returns information about which languages are supported by AWS Polly,
     Bhashini, or browser fallback.
     """
-    return JSONResponse(content={
-        "status": "success",
-        "data": {
-            "aws_polly": [
-                {"code": "hi-IN", "name": "Hindi", "quality": "premium"},
-                {"code": "bn-IN", "name": "Bengali", "quality": "premium"},
-                {"code": "en-IN", "name": "English", "quality": "premium"},
-                {"code": "ta-IN", "name": "Tamil", "quality": "premium"},
-                {"code": "te-IN", "name": "Telugu", "quality": "premium"},
-                {"code": "ml-IN", "name": "Malayalam", "quality": "premium"},
-                {"code": "kn-IN", "name": "Kannada", "quality": "premium"}
-            ],
-            "bhashini": [
-                {"code": "bho", "name": "Bhojpuri", "dialect": True, "quality": "standard"},
-                {"code": "mai", "name": "Maithili", "dialect": True, "quality": "standard"},
-                {"code": "awa", "name": "Awadhi", "dialect": True, "quality": "standard"}
-            ],
-            "browser_fallback": [
-                {"code": "gu-IN", "name": "Gujarati", "quality": "basic"},
-                {"code": "mr-IN", "name": "Marathi", "quality": "basic"},
-                {"code": "pa-IN", "name": "Punjabi", "quality": "basic"}
-            ]
+    return JSONResponse(
+        content={
+            "status": "success",
+            "data": {
+                "aws_polly": [
+                    {"code": "hi-IN", "name": "Hindi", "quality": "premium"},
+                    {"code": "bn-IN", "name": "Bengali", "quality": "premium"},
+                    {"code": "en-IN", "name": "English", "quality": "premium"},
+                    {"code": "ta-IN", "name": "Tamil", "quality": "premium"},
+                    {"code": "te-IN", "name": "Telugu", "quality": "premium"},
+                    {"code": "ml-IN", "name": "Malayalam", "quality": "premium"},
+                    {"code": "kn-IN", "name": "Kannada", "quality": "premium"},
+                ],
+                "bhashini": [
+                    {
+                        "code": "bho",
+                        "name": "Bhojpuri",
+                        "dialect": True,
+                        "quality": "standard",
+                    },
+                    {
+                        "code": "mai",
+                        "name": "Maithili",
+                        "dialect": True,
+                        "quality": "standard",
+                    },
+                    {
+                        "code": "awa",
+                        "name": "Awadhi",
+                        "dialect": True,
+                        "quality": "standard",
+                    },
+                ],
+                "browser_fallback": [
+                    {"code": "gu-IN", "name": "Gujarati", "quality": "basic"},
+                    {"code": "mr-IN", "name": "Marathi", "quality": "basic"},
+                    {"code": "pa-IN", "name": "Punjabi", "quality": "basic"},
+                ],
+            },
         }
-    })
+    )
+
 
 # ============================================================================
 # AUTHENTICATION & USER STATE ENDPOINTS
 # ============================================================================
+
 
 class UserRegisterRequest(BaseModel):
     email: str
     password: str
     name: str
 
+
 class UserLoginRequest(BaseModel):
     email: str
     password: str
+
 
 try:
     from services.authentication import register_user, login_user
@@ -1144,6 +1248,7 @@ except ImportError as e:
     logger.warning(f"Auth service not available: {e}")
     register_user = None
     login_user = None
+
 
 @app.post("/api/v1/auth/register")
 async def register(request: UserRegisterRequest):
@@ -1156,6 +1261,7 @@ async def register(request: UserRegisterRequest):
     else:
         raise HTTPException(status_code=400, detail=result.get("error"))
 
+
 @app.post("/api/v1/auth/login")
 async def login(request: UserLoginRequest):
     """Login and receive a JWT token"""
@@ -1167,15 +1273,18 @@ async def login(request: UserLoginRequest):
     else:
         raise HTTPException(status_code=401, detail=result.get("error"))
 
+
 # ============================================================================
 # MATTER WORKSPACE ENDPOINTS
 # ============================================================================
 
 from fastapi import Header
 
+
 class MatterCreateRequest(BaseModel):
     name: str
     description: Optional[str] = None
+
 
 try:
     from services.database import get_db
@@ -1183,6 +1292,7 @@ try:
 except ImportError:
     get_db = None
     verify_token = None
+
 
 def get_current_user(authorization: str = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
@@ -1193,41 +1303,50 @@ def get_current_user(authorization: str = Header(None)):
         if not payload:
             raise HTTPException(status_code=401, detail="Invalid or expired token")
         return payload
-    return {"sub": 0} # Mock if service disabled
+    return {"sub": 0}  # Mock if service disabled
+
 
 @app.get("/api/v1/matters")
 async def list_matters(user=Depends(get_current_user)):
     """List all matters for the currently authenticated user"""
     if not get_db:
-         return JSONResponse(content={"status": "success", "data": []})
+        return JSONResponse(content={"status": "success", "data": []})
     with get_db() as db:
         matters = db.execute(
             "SELECT id, name, description, created_at FROM matters WHERE user_id = ?",
-            (user['sub'],)
+            (user["sub"],),
         ).fetchall()
-        return JSONResponse(content={"status": "success", "data": [dict(m) for m in matters]})
+        return JSONResponse(
+            content={"status": "success", "data": [dict(m) for m in matters]}
+        )
+
 
 @app.post("/api/v1/matters")
 async def create_matter(request: MatterCreateRequest, user=Depends(get_current_user)):
     """Create a new segregated matter workspace"""
     if not get_db:
-         return JSONResponse(content={"status": "success", "matter_id": 1})
+        return JSONResponse(content={"status": "success", "matter_id": 1})
     with get_db() as db:
         cursor = db.execute(
             "INSERT INTO matters (user_id, name, description) VALUES (?, ?, ?)",
-            (user['sub'], request.name, request.description)
+            (user["sub"], request.name, request.description),
         )
         db.commit()
-        return JSONResponse(content={"status": "success", "matter_id": cursor.lastrowid})
+        return JSONResponse(
+            content={"status": "success", "matter_id": cursor.lastrowid}
+        )
+
 
 # ============================================================================
 # DOCUMENT DRAFTING ENDPOINTS
 # ============================================================================
 
+
 class DocumentDraftingRequest(BaseModel):
     document_type: str
     parties: str
     key_terms: str
+
 
 try:
     from services.document_drafting import document_drafting_service
@@ -1235,28 +1354,32 @@ except ImportError as e:
     logger.warning(f"Drafting service not available: {e}")
     document_drafting_service = None
 
+
 @app.post("/api/v1/documents/draft")
 async def draft_document(request: DocumentDraftingRequest):
     """Generate a custom legal document draft"""
     if not document_drafting_service:
         raise HTTPException(status_code=503, detail="Drafting service not available")
-    
+
     result = document_drafting_service.generate_draft(
         document_type=request.document_type,
         parties=request.parties,
-        key_terms=request.key_terms
+        key_terms=request.key_terms,
     )
     if result.get("success"):
         return JSONResponse(content={"status": "success", "data": result})
     else:
         raise HTTPException(status_code=500, detail=result.get("error"))
 
+
 # ============================================================================
 # LIVE RESEARCH ENDPOINTS
 # ============================================================================
 
+
 class CaseLawResearchRequest(BaseModel):
     query: str
+
 
 try:
     from services.live_research import live_research_service
@@ -1264,14 +1387,17 @@ except ImportError as e:
     logger.warning(f"Live research service not available: {e}")
     live_research_service = None
 
+
 @app.post("/api/v1/research/case-law")
 async def research_case_law(request: CaseLawResearchRequest):
     """Search for live case law context using DuckDuckGo directly."""
     if not live_research_service:
-        raise HTTPException(status_code=503, detail="Live research service not available")
-        
+        raise HTTPException(
+            status_code=503, detail="Live research service not available"
+        )
+
     result = live_research_service.search_case_law(query=request.query)
-    
+
     if result.get("success"):
         return JSONResponse(content={"status": "success", "data": result})
     else:
@@ -1282,18 +1408,26 @@ async def research_case_law(request: CaseLawResearchRequest):
 async def download_draft(filename: str):
     """Download the generated docx file"""
     import os
+
     file_path = os.path.join(os.path.dirname(__file__), "storage", "drafts", filename)
     if os.path.exists(file_path):
-        return FileResponse(file_path, filename=filename, media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+        return FileResponse(
+            file_path,
+            filename=filename,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
     raise HTTPException(status_code=404, detail="File not found")
+
 
 # ============================================================================
 # CONTRACT REVIEW & REDLINING ENDPOINTS
 # ============================================================================
 
+
 class ContractReviewRequest(BaseModel):
     document_text: str
     playbook_rules: Optional[str] = None
+
 
 try:
     from services.contract_review import contract_review_service
@@ -1301,17 +1435,19 @@ except ImportError as e:
     logger.warning(f"Contract review service not available: {e}")
     contract_review_service = None
 
+
 @app.post("/api/v1/contracts/review")
 async def review_contract(request: ContractReviewRequest):
     """Analyze a contract and provide structural redlines and risk assessment."""
     if not contract_review_service:
-        raise HTTPException(status_code=503, detail="Contract review service not available")
-        
+        raise HTTPException(
+            status_code=503, detail="Contract review service not available"
+        )
+
     result = contract_review_service.analyze_contract(
-        contract_text=request.document_text,
-        playbook_rules=request.playbook_rules
+        contract_text=request.document_text, playbook_rules=request.playbook_rules
     )
-    
+
     if result.get("success"):
         return JSONResponse(content={"status": "success", "data": result["data"]})
     else:

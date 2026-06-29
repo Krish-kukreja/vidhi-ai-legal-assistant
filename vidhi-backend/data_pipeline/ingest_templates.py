@@ -29,7 +29,7 @@ This Non-Disclosure Agreement (the "Agreement") is entered into by and between [
 3. Time Periods. The nondisclosure provisions of this Agreement shall survive the termination of this Agreement and Receiving Party's duty to hold Confidential Information in confidence shall remain in effect until the Confidential Information no longer qualifies as a trade secret or until Disclosing Party sends Receiving Party written notice releasing Receiving Party from this Agreement, whichever occurs first.
 
 4. Governing Law. This Agreement shall be governed in accordance with the laws of India. Jurisdiction shall be exclusively in the courts of [JURISDICTION CITY].
-"""
+""",
     },
     {
         "title": "Residential Rental Agreement",
@@ -54,7 +54,7 @@ WHEREAS the Landlord is the absolute owner of the premises located at [PROPERTY 
 5. Notice Period: Either party can terminate this agreement by giving [NOTICE PERIOD] months written notice to the other party.
 
 IN WITNESS WHEREOF the parties hereto have signed this Agreement.
-"""
+""",
     },
     {
         "title": "Employment Contract",
@@ -77,45 +77,44 @@ AND
 6. Confidentiality: The Employee agrees not to disclose any confidential information belonging to the Company.
 
 Governing Law: The laws of India.
-"""
-    }
+""",
+    },
 ]
+
 
 def ingest_templates():
     logger.info("Initializing template ingestion pipeline...")
-    
+
     # Needs AWS config inside environment to get embeddings
     embeddings = config.get_embeddings()
     if not embeddings:
         logger.error("Could not load embeddings. Check AWS credentials.")
         return False
-        
+
     docs = []
-    
+
     for template in STANDARD_TEMPLATES:
         # Create a document
         text = f"Title: {template['title']}\nType: {template['type']}\nDescription: {template['description']}\n\nCONTENT:\n{template['content']}"
-        
+
         doc = Document(
             page_content=text,
             metadata={
                 "type": template["type"],
-                "jurisdiction": template["jurisdiction"]
-            }
+                "jurisdiction": template["jurisdiction"],
+            },
         )
         docs.append(doc)
-    
+
     logger.info(f"Loaded {len(docs)} template documents.")
-    
+
     # Store to Chroma DB in a specific collection
     logger.info("Storing templates to ChromaDB 'vidhi-templates' collection...")
     try:
         vectorstore = store_embeddings(
-            documents=docs,
-            embeddings=embeddings,
-            collection_name="vidhi-templates"
+            documents=docs, embeddings=embeddings, collection_name="vidhi-templates"
         )
-        
+
         if vectorstore:
             logger.info("Template ingestion completed successfully!")
             return True
@@ -125,6 +124,7 @@ def ingest_templates():
     except Exception as e:
         logger.error(f"Error during ingestion: {e}", exc_info=True)
         return False
+
 
 if __name__ == "__main__":
     ingest_templates()

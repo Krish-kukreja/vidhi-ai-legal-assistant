@@ -16,11 +16,7 @@ celery_app = Celery(
     "vidhi",
     broker=REDIS_URL,
     backend=RESULT_BACKEND,
-    include=[
-        "tasks.data_pipeline_tasks",
-        "tasks.document_tasks",
-        "tasks.audio_tasks"
-    ]
+    include=["tasks.data_pipeline_tasks", "tasks.document_tasks", "tasks.audio_tasks"],
 )
 
 # Celery configuration
@@ -31,26 +27,21 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="Asia/Kolkata",
     enable_utc=True,
-    
     # Task execution settings
     task_track_started=True,
     task_time_limit=1800,  # 30 minutes hard limit
     task_soft_time_limit=1500,  # 25 minutes soft limit
     task_acks_late=True,  # Acknowledge after task completion
     task_reject_on_worker_lost=True,
-    
     # Result backend settings
     result_expires=86400,  # 24 hours
     result_persistent=True,
-    
     # Worker settings
     worker_prefetch_multiplier=1,  # One task at a time
     worker_max_tasks_per_child=100,  # Restart worker after 100 tasks
-    
     # Retry settings
     task_default_retry_delay=2,  # 2 seconds
     task_max_retries=3,
-    
     # Beat schedule (periodic tasks)
     beat_schedule={
         "refresh-data-pipeline-daily": {

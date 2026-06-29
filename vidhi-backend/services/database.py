@@ -5,13 +5,17 @@ from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "storage", "vidhi.db")
+DB_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "storage", "vidhi.db"
+)
+
 
 def init_db():
     """Initializes the SQLite database with required tables if they don't exist."""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     with get_db() as db:
-        db.execute("""
+        db.execute(
+            """
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 email TEXT UNIQUE NOT NULL,
@@ -19,8 +23,10 @@ def init_db():
                 name TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """)
-        db.execute("""
+        """
+        )
+        db.execute(
+            """
             CREATE TABLE IF NOT EXISTS matters (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -29,8 +35,10 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(user_id) REFERENCES users(id)
             )
-        """)
-        db.execute("""
+        """
+        )
+        db.execute(
+            """
             CREATE TABLE IF NOT EXISTS matter_documents (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 matter_id INTEGER NOT NULL,
@@ -39,9 +47,11 @@ def init_db():
                 uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(matter_id) REFERENCES matters(id)
             )
-        """)
+        """
+        )
         db.commit()
     logger.info("Database initialized successfully.")
+
 
 @contextmanager
 def get_db():
@@ -52,6 +62,7 @@ def get_db():
         yield conn
     finally:
         conn.close()
+
 
 # Initialize upon import
 init_db()

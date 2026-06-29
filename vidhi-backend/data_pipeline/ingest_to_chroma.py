@@ -32,14 +32,14 @@ CHUNK_SIZE = 1200
 CHUNK_OVERLAP = 150
 
 splitter = RecursiveCharacterTextSplitter(
-    chunk_size=CHUNK_SIZE,
-    chunk_overlap=CHUNK_OVERLAP
+    chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
 )
 
 
-# 
+#
 # DOCUMENT LOADERS
-# 
+#
+
 
 def load_constitution() -> list[Document]:
     path = os.path.join(RAW_DIR, "constitution_of_india.json")
@@ -58,10 +58,7 @@ def load_constitution() -> list[Document]:
     elif isinstance(data, dict):
         # Could be {articles: [...]} or {parts: [...]}
         articles = (
-            data.get("articles")
-            or data.get("parts")
-            or data.get("content")
-            or [data]
+            data.get("articles") or data.get("parts") or data.get("content") or [data]
         )
     else:
         articles = []
@@ -70,28 +67,51 @@ def load_constitution() -> list[Document]:
         """Recursively extract articles from nested JSON"""
         extracted = []
         if isinstance(obj, dict):
-            article_no = obj.get("article_no") or obj.get("articleNo") or obj.get("number") or obj.get("id") or ""
+            article_no = (
+                obj.get("article_no")
+                or obj.get("articleNo")
+                or obj.get("number")
+                or obj.get("id")
+                or ""
+            )
             title = obj.get("title") or obj.get("heading") or obj.get("name") or ""
-            content = obj.get("description") or obj.get("content") or obj.get("text") or obj.get("body") or ""
+            content = (
+                obj.get("description")
+                or obj.get("content")
+                or obj.get("text")
+                or obj.get("body")
+                or ""
+            )
 
             if content:
                 full_text = f"Article {article_no}: {title}\n\n{content}"
-                extracted.append(Document(
-                    page_content=full_text.strip(),
-                    metadata={
-                        "source": "Constitution of India",
-                        "article_no": str(article_no),
-                        "title": title,
-                        "type": "constitution",
-                        "parent": parent_context
-                    }
-                ))
+                extracted.append(
+                    Document(
+                        page_content=full_text.strip(),
+                        metadata={
+                            "source": "Constitution of India",
+                            "article_no": str(article_no),
+                            "title": title,
+                            "type": "constitution",
+                            "parent": parent_context,
+                        },
+                    )
+                )
 
             # Recurse into nested structures
-            for key in ["articles", "clauses", "sub_articles", "parts", "sections", "children"]:
+            for key in [
+                "articles",
+                "clauses",
+                "sub_articles",
+                "parts",
+                "sections",
+                "children",
+            ]:
                 if key in obj and isinstance(obj[key], list):
                     for child in obj[key]:
-                        extracted.extend(extract_article(child, f"Article {article_no}"))
+                        extracted.extend(
+                            extract_article(child, f"Article {article_no}")
+                        )
 
         elif isinstance(obj, list):
             for item in obj:
@@ -105,11 +125,21 @@ def load_constitution() -> list[Document]:
     # If no docs extracted, treat entire JSON as text blobs
     if not docs and articles:
         for i, item in enumerate(articles):
-            text = json.dumps(item, ensure_ascii=False) if isinstance(item, dict) else str(item)
-            docs.append(Document(
-                page_content=text[:2000],
-                metadata={"source": "Constitution of India", "type": "constitution", "index": i}
-            ))
+            text = (
+                json.dumps(item, ensure_ascii=False)
+                if isinstance(item, dict)
+                else str(item)
+            )
+            docs.append(
+                Document(
+                    page_content=text[:2000],
+                    metadata={
+                        "source": "Constitution of India",
+                        "type": "constitution",
+                        "index": i,
+                    },
+                )
+            )
 
     logger.info(f"Loaded {len(docs)} constitution documents")
     # Split large articles
@@ -133,15 +163,17 @@ def load_india_code_acts() -> list[Document]:
         for section in act.get("sections", []):
             text = section.get("text", "").strip()
             if text and len(text) > 50:
-                docs.append(Document(
-                    page_content=f"{act_name}\n\n{text}",
-                    metadata={
-                        "source": "India Code",
-                        "act_name": act_name,
-                        "type": "legislation",
-                        "chunk_index": section.get("chunk_index", 0)
-                    }
-                ))
+                docs.append(
+                    Document(
+                        page_content=f"{act_name}\n\n{text}",
+                        metadata={
+                            "source": "India Code",
+                            "act_name": act_name,
+                            "type": "legislation",
+                            "chunk_index": section.get("chunk_index", 0),
+                        },
+                    )
+                )
 
     logger.info(f"Loaded {len(docs)} act documents")
     result = splitter.split_documents(docs)
@@ -188,12 +220,27 @@ def load_schemes() -> list[Document]:
 
     for scheme in data:
         # Normalize field names
-        name = scheme.get("scheme_name") or scheme.get("schemeName") or scheme.get("name") or "Unknown Scheme"
+        name = (
+            scheme.get("scheme_name")
+            or scheme.get("schemeName")
+            or scheme.get("name")
+            or "Unknown Scheme"
+        )
         details = scheme.get("details") or scheme.get("description") or ""
         benefits = scheme.get("benefits") or ""
         eligibility = scheme.get("eligibility") or ""
-        application = scheme.get("application_process") or scheme.get("applicationProcess") or scheme.get("howToApply") or ""
-        documents = scheme.get("documents_required") or scheme.get("documentsRequired") or scheme.get("documents") or ""
+        application = (
+            scheme.get("application_process")
+            or scheme.get("applicationProcess")
+            or scheme.get("howToApply")
+            or ""
+        )
+        documents = (
+            scheme.get("documents_required")
+            or scheme.get("documentsRequired")
+            or scheme.get("documents")
+            or ""
+        )
         tags = scheme.get("tags") or []
         ministry = scheme.get("ministry") or scheme.get("nodal_ministry") or ""
         state = scheme.get("state") or "Central"
@@ -228,18 +275,20 @@ Documents Required:
 {documents}
 """.strip()
 
-        docs.append(Document(
-            page_content=content,
-            metadata={
-                "source": "MyScheme.gov.in",
-                "scheme_name": name,
-                "type": "government_scheme",
-                "ministry": ministry,
-                "state": state,
-                "scheme_link": link,
-                "tags": json.dumps(tags) if isinstance(tags, list) else str(tags)
-            }
-        ))
+        docs.append(
+            Document(
+                page_content=content,
+                metadata={
+                    "source": "MyScheme.gov.in",
+                    "scheme_name": name,
+                    "type": "government_scheme",
+                    "ministry": ministry,
+                    "state": state,
+                    "scheme_link": link,
+                    "tags": json.dumps(tags) if isinstance(tags, list) else str(tags),
+                },
+            )
+        )
 
     logger.info(f"Loaded {len(docs)} valid scheme documents (skipped empty ones)")
     result = splitter.split_documents(docs)
@@ -247,9 +296,10 @@ Documents Required:
     return result
 
 
-# 
+#
 # INGEST INTO CHROMADB
-# 
+#
+
 
 def ingest_all():
     from configs import config
@@ -287,14 +337,18 @@ def ingest_all():
 
     vectorstore = None
     for i in range(0, len(all_docs), BATCH_SIZE):
-        batch = all_docs[i:i + BATCH_SIZE]
+        batch = all_docs[i : i + BATCH_SIZE]
         batch_num = i // BATCH_SIZE + 1
         total_batches = (len(all_docs) + BATCH_SIZE - 1) // BATCH_SIZE
-        logger.info(f"  Batch {batch_num}/{total_batches}: embedding {len(batch)} docs...")
+        logger.info(
+            f"  Batch {batch_num}/{total_batches}: embedding {len(batch)} docs..."
+        )
 
         try:
             if vectorstore is None:
-                vectorstore = store_embeddings(batch, embeddings, persist_directory=CHROMA_DIR)
+                vectorstore = store_embeddings(
+                    batch, embeddings, persist_directory=CHROMA_DIR
+                )
             else:
                 vectorstore.add_documents(batch)
         except Exception as e:
@@ -316,7 +370,9 @@ def ingest_all():
             results = vectorstore.similarity_search(q, k=2)
             logger.info(f"  Query: '{q}' → {len(results)} results")
             if results:
-                logger.info(f"    Top result source: {results[0].metadata.get('source', 'unknown')}")
+                logger.info(
+                    f"    Top result source: {results[0].metadata.get('source', 'unknown')}"
+                )
 
 
 if __name__ == "__main__":

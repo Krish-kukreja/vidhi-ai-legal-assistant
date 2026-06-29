@@ -49,9 +49,9 @@ class DistributionInfoResponse(BaseModel):
 async def invalidate_cache(request: InvalidateRequest):
     """
     Create CloudFront cache invalidation
-    
+
     Requires admin authentication (handled by auth middleware)
-    
+
     Example:
     ```json
     {
@@ -61,34 +61,26 @@ async def invalidate_cache(request: InvalidateRequest):
     """
     try:
         if not cdn_service.is_enabled():
-            raise HTTPException(
-                status_code=503,
-                detail="CDN service not enabled"
-            )
-        
+            raise HTTPException(status_code=503, detail="CDN service not enabled")
+
         if not request.paths:
-            raise HTTPException(
-                status_code=400,
-                detail="No paths provided"
-            )
-        
+            raise HTTPException(status_code=400, detail="No paths provided")
+
         # Limit to 100 paths per request (CloudFront limit is 3000 per batch)
         if len(request.paths) > 100:
             raise HTTPException(
-                status_code=400,
-                detail="Maximum 100 paths per invalidation request"
+                status_code=400, detail="Maximum 100 paths per invalidation request"
             )
-        
+
         result = cdn_service.invalidate_cache(request.paths)
-        
+
         if not result["success"]:
             raise HTTPException(
-                status_code=500,
-                detail=result.get("error", "Invalidation failed")
+                status_code=500, detail=result.get("error", "Invalidation failed")
             )
-        
+
         return InvalidateResponse(**result)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -96,32 +88,30 @@ async def invalidate_cache(request: InvalidateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/invalidation/{invalidation_id}", response_model=InvalidationStatusResponse)
+@router.get(
+    "/invalidation/{invalidation_id}", response_model=InvalidationStatusResponse
+)
 async def get_invalidation_status(invalidation_id: str):
     """
     Get status of a CloudFront invalidation
-    
+
     Status values:
     - InProgress: Invalidation is in progress
     - Completed: Invalidation completed successfully
     """
     try:
         if not cdn_service.is_enabled():
-            raise HTTPException(
-                status_code=503,
-                detail="CDN service not enabled"
-            )
-        
+            raise HTTPException(status_code=503, detail="CDN service not enabled")
+
         result = cdn_service.get_invalidation_status(invalidation_id)
-        
+
         if not result["success"]:
             raise HTTPException(
-                status_code=404,
-                detail=result.get("error", "Invalidation not found")
+                status_code=404, detail=result.get("error", "Invalidation not found")
             )
-        
+
         return InvalidationStatusResponse(**result)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -137,7 +127,7 @@ async def get_distribution_info():
     try:
         info = cdn_service.get_distribution_info()
         return DistributionInfoResponse(**info)
-        
+
     except Exception as e:
         logger.error(f"Error in get_distribution_info endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -150,23 +140,20 @@ async def cdn_health_check():
     """
     try:
         is_enabled = cdn_service.is_enabled()
-        
+
         if is_enabled:
             return {
                 "status": "healthy",
                 "cdn_enabled": True,
-                "distribution_id": cdn_service.distribution_id
+                "distribution_id": cdn_service.distribution_id,
             }
         else:
             return {
                 "status": "disabled",
                 "cdn_enabled": False,
-                "message": "CDN not configured, using direct S3 URLs"
+                "message": "CDN not configured, using direct S3 URLs",
             }
-            
+
     except Exception as e:
         logger.error(f"Error in cdn_health_check endpoint: {e}")
-        return {
-            "status": "unhealthy",
-            "error": str(e)
-        }
+        return {"status": "unhealthy", "error": str(e)}

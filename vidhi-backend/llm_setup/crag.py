@@ -74,12 +74,14 @@ class RelevanceGrader:
         try:
             prompt = self.GRADE_PROMPT.format(
                 question=question,
-                document=doc.page_content[:800]  # trim to save tokens
+                document=doc.page_content[:800],  # trim to save tokens
             )
             response = self._llm.invoke(prompt)
             answer = (
-                response.content if hasattr(response, "content") else str(response)
-            ).strip().upper()
+                (response.content if hasattr(response, "content") else str(response))
+                .strip()
+                .upper()
+            )
             return answer.startswith("YES")
         except Exception as e:
             logger.warning(f"Grading failed for doc: {e}")
@@ -102,12 +104,11 @@ class RelevanceGrader:
                 grade=Grade.IRRELEVANT,
                 relevant_count=0,
                 total_docs=0,
-                reasoning="No documents retrieved from knowledge base."
+                reasoning="No documents retrieved from knowledge base.",
             )
 
         relevant_count = sum(
-            1 for doc in documents
-            if self._grade_single(question, doc)
+            1 for doc in documents if self._grade_single(question, doc)
         )
         total = len(documents)
 
@@ -126,5 +127,5 @@ class RelevanceGrader:
             grade=grade,
             relevant_count=relevant_count,
             total_docs=total,
-            reasoning=reasoning
+            reasoning=reasoning,
         )
